@@ -1,6 +1,6 @@
 {
   "name": "functional.dev",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "files": [
     "dist",
@@ -12,19 +12,20 @@
   "exports": {
     ".": "./src/config/index.ts"
   },
-  "scripts": {
-    "build": "bun build ./src/cli.ts --target bun --outfile ./dist/functional.js"
-  },
-  "devDependencies": {
-    "@types/bun": "latest",
-    "commander": "^13.1.0"
-  },
-  "peerDependencies": {
-    "wrangler": "^4.11.1",
-    "typescript": "^5"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/john-royal/functional.dev.git"
   },
   "dependencies": {
     "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "wrangler": "^4.11.1",
     "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
   }
 }
