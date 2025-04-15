@@ -1,0 +1,30 @@
+{
+  "name": "functional.dev",
+  "version": "0.0.1",
+  "type": "module",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "bin": {
+    "functional": "./src/cli.ts"
+  },
+  "exports": {
+    ".": "./src/config/index.ts"
+  },
+  "scripts": {
+    "build": "bun build ./src/cli.ts --target bun --outfile ./dist/functional.js"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "commander": "^13.1.0"
+  },
+  "peerDependencies": {
+    "wrangler": "^4.11.1",
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "zod": "^3.24.2"
+  }
+}
