@@ -1,5 +1,7 @@
 export default {
-  async fetch(request: Request) {
-    return new Response("Hello from Functional!");
+  async fetch(request, env) {
+    return Response.json({
+      env,
+    });
   },
 } satisfies ExportedHandler<Env>;

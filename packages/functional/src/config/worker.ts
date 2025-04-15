@@ -1,18 +1,17 @@
-import { z } from "zod";
-import { register } from "./registry";
 import type { BaseResource } from "./base";
+import type { Binding } from "./binding";
+import { register } from "./registry";
 
-export const WorkerOptions = z.object({
-  name: z.string(),
-  entry: z.string(),
-});
-export type WorkerOptions = z.infer<typeof WorkerOptions>;
+interface WorkerOptions {
+  name: string;
+  entry: string;
+  bindings?: Binding[];
+}
 
-export class Worker implements BaseResource {
+export class Worker implements BaseResource<WorkerOptions> {
   readonly kind = "worker";
 
   constructor(readonly options: WorkerOptions) {
-    WorkerOptions.parse(this.options);
     register(this);
   }
 }

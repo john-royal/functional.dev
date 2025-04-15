@@ -1,17 +1,18 @@
 #!/usr/bin/env bun
 
-import { Cache } from "./cli/cache";
-import type { WranglerConfig } from "./cli/wrangler-config";
-import * as wrangler from "./cli/wrangler";
-import type { Resource } from "./config";
-import { Config } from "./config/config";
-import { registerResources } from "./config/registry";
-import packageJson from "../package.json";
-import path from "path";
-import chalk from "chalk";
 import { $ } from "bun";
+import chalk from "chalk";
 import { Command, program } from "commander";
 import fs from "fs";
+import path from "path";
+import packageJson from "../package.json";
+import { Cache } from "./cli/cache";
+import * as wrangler from "./cli/wrangler";
+import type { WranglerConfig } from "./cli/wrangler-config";
+import type { Resource } from "./config";
+import type { Binding, BindingValue } from "./config/binding";
+import { Config } from "./config/config";
+import { registerResources } from "./config/registry";
 
 const cwd = process.cwd();
 const functional = path.join(cwd, ".functional");
@@ -70,8 +71,30 @@ interface ResolvedResource extends Resource {
 
 const runConfig = async (configPath: string): Promise<ResolvedResource[]> => {
   const { default: input } = await import(configPath);
-  const { setup, ...config } = Config.parse(input);
-  const resources: Resource[] = await registerResources(() => setup());
+  const { app, env, setup } = Config.parse(input);
+
+  const envProxy = new Proxy(env, {
+    get(target, prop: string): Binding {
+      if (prop in target && target[prop] !== undefined) {
+        return {
+          name: prop,
+          type: "variable",
+          value: target[prop],
+        };
+      } else {
+        console.warn(`Unknown binding: ${prop}`);
+        return {
+          name: prop,
+          type: "variable",
+          value: null,
+        };
+      }
+    },
+  });
+
+  const resources: Resource[] = await registerResources(() =>
+    setup({ app, env: envProxy })
+  );
 
   for (const resource of resources) {
     switch (resource.kind) {
@@ -79,13 +102,17 @@ const runConfig = async (configPath: string): Promise<ResolvedResource[]> => {
         const outputPath = path.join(functional, resource.options.name);
         const wranglerConfigPath = path.join(outputPath, "wrangler.jsonc");
         const wranglerConfig: WranglerConfig = {
-          name: `${config.name}-${config.environment}-${resource.options.name}`,
+          name: `${app.name}-${app.environment}-${resource.options.name}`,
           compatibility_date: "2025-04-10",
           compatibility_flags: ["nodejs_compat_v2"],
           main: path.relative(
             outputPath,
             path.join(cwd, resource.options.entry)
           ),
+          vars: resource.options.bindings?.reduce((acc, binding) => {
+            acc[binding.name] = binding.value;
+            return acc;
+          }, {} as Record<string, BindingValue>),
         };
         const wranglerConfigFile = Bun.file(wranglerConfigPath);
         const workerTypesFile = Bun.file(
@@ -109,7 +136,7 @@ const runConfig = async (configPath: string): Promise<ResolvedResource[]> => {
     }
   }
 
-  const resolvedConfig = { ...config, resources };
+  const resolvedConfig = { app, env, resources };
   console.log(resolvedConfig);
   cache.set("config", resolvedConfig);
 

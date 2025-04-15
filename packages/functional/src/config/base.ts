@@ -1,4 +1,4 @@
-export interface BaseResource {
+export interface BaseResource<Options> {
   kind: string;
-  options: Record<string, unknown>;
+  options: Options;
 }
