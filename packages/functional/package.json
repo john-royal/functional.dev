@@ -20,9 +20,11 @@
     "url": "https://github.com/john-royal/functional.dev.git"
   },
   "dependencies": {
+    "@effect/platform": "^0.80.10",
     "chalk": "^5.4.1",
     "cloudflare": "^4.2.0",
     "commander": "^13.1.0",
+    "effect": "^3.14.10",
     "miniflare": "^4.20250410.1",
     "wrangler": "^4.11.1",
     "xdg-app-paths": "^8.3.0",
