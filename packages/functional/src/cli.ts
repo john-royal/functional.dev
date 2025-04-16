@@ -10,8 +10,12 @@ import { Cache } from "./cli/cache";
 import * as wrangler from "./cli/wrangler";
 import type { WranglerConfig } from "./cli/wrangler-config";
 import type { Resource } from "./config";
-import type { Binding, BindingValue } from "./config/binding";
-import { Config } from "./config/config";
+import {
+  functionalSecretSymbol,
+  type Binding,
+  type BindingValue,
+} from "./config/binding";
+import type { Config } from "./config/config";
 import { registerResources } from "./config/registry";
 
 const cwd = process.cwd();
@@ -70,47 +74,78 @@ interface ResolvedResource extends Resource {
 }
 
 const runConfig = async (configPath: string): Promise<ResolvedResource[]> => {
-  const { default: input } = await import(configPath);
-  const { app, env, setup } = Config.parse(input);
+  const config = (await import(configPath)).default as Config;
 
-  const envProxy = new Proxy(env, {
+  const isBinding = (value: unknown): value is Binding =>
+    typeof value === "object" &&
+    value !== null &&
+    "name" in value &&
+    "type" in value;
+
+  const envProxy = new Proxy(config.env, {
     get(target, prop: string): Binding {
-      if (prop in target && target[prop] !== undefined) {
+      if (!(prop in target) || typeof target[prop] === "undefined") {
+        throw new Error(`Unknown binding: ${prop}`);
+      }
+      const value = target[prop];
+
+      if (
+        typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean" ||
+        value === null
+      ) {
         return {
           name: prop,
           type: "variable",
-          value: target[prop],
-        };
-      } else {
-        console.warn(`Unknown binding: ${prop}`);
-        return {
-          name: prop,
-          type: "variable",
-          value: null,
+          value,
         };
       }
+
+      if (functionalSecretSymbol in value) {
+        const envName =
+          (value[functionalSecretSymbol] as string | undefined) ?? prop;
+        const valueFromEnv = process.env[envName];
+        if (valueFromEnv === undefined) {
+          throw new Error(`Unknown secret: ${envName}`);
+        }
+        return {
+          name: prop,
+          type: "secret",
+          value: valueFromEnv,
+        };
+      }
+
+      throw new Error(`Unknown binding: ${prop}`);
     },
-  });
+  }) as Record<string, Binding>;
 
   const resources: Resource[] = await registerResources(() =>
-    setup({ app, env: envProxy })
+    config.setup({ env: envProxy })
   );
 
   for (const resource of resources) {
     switch (resource.kind) {
       case "worker": {
+        let devVars = "";
         const outputPath = path.join(functional, resource.options.name);
         const wranglerConfigPath = path.join(outputPath, "wrangler.jsonc");
         const wranglerConfig: WranglerConfig = {
-          name: `${app.name}-${app.environment}-${resource.options.name}`,
+          name: `${config.name}-${resource.options.name}`,
           compatibility_date: "2025-04-10",
           compatibility_flags: ["nodejs_compat_v2"],
           main: path.relative(
             outputPath,
             path.join(cwd, resource.options.entry)
           ),
-          vars: resource.options.bindings?.reduce((acc, binding) => {
-            acc[binding.name] = binding.value;
+          vars: resource.options.bindings?.reduce((acc, b) => {
+            const binding = b;
+            console.log(binding);
+            if (binding.type === "variable") {
+              acc[binding.name] = binding.value;
+            } else {
+              devVars += `${binding.name}=${JSON.stringify(binding.value)}\n`;
+            }
             return acc;
           }, {} as Record<string, BindingValue>),
         };
@@ -125,6 +160,7 @@ const runConfig = async (configPath: string): Promise<ResolvedResource[]> => {
           !(await workerTypesFile.exists())
         ) {
           await wranglerConfigFile.write(newContent);
+          await Bun.write(path.join(outputPath, ".dev.vars"), devVars);
           await $`wrangler types --config ${wranglerConfigPath}`;
         }
         Object.assign(resource, {
@@ -136,7 +172,7 @@ const runConfig = async (configPath: string): Promise<ResolvedResource[]> => {
     }
   }
 
-  const resolvedConfig = { app, env, resources };
+  const resolvedConfig = { ...config, resources };
   console.log(resolvedConfig);
   cache.set("config", resolvedConfig);
 
