@@ -13,7 +13,7 @@ export const accountSchema = z.object({
 export type Account = z.infer<typeof accountSchema>;
 
 export const getAccount = async () => {
-  const output = await $`wrangler whoami`.text();
+  const output = await $`wrangler whoami`;
   return parseAccount(output);
 };
 

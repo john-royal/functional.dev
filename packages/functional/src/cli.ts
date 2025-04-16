@@ -1,5 +1,3 @@
-#!/usr/bin/env bun
-
 import { $ } from "bun";
 import chalk from "chalk";
 import { Command, program } from "commander";

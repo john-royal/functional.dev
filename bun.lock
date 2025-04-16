@@ -25,13 +25,14 @@
     },
     "packages/functional": {
       "name": "functional.dev",
-      "version": "0.0.1",
+      "version": "0.0.3",
       "bin": {
-        "functional": "./src/cli.ts",
+        "functional": "./dist/cli",
       },
       "dependencies": {
         "chalk": "^5.4.1",
         "commander": "^13.1.0",
+        "miniflare": "^4.20250410.1",
         "wrangler": "^4.11.1",
         "zod": "^3.24.2",
       },
