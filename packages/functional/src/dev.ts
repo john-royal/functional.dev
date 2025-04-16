@@ -18,6 +18,7 @@ async function build(entry: string) {
   if (!entrypoint) {
     throw new Error("No entrypoint found");
   }
+  console.log(entrypoint);
   return entrypoint.path;
 }
 
