@@ -1,23 +1,58 @@
 import type Cloudflare from "cloudflare";
 import assert from "node:assert";
-import { watch, type FSWatcher, type WatchListener } from "node:fs";
+import { watch, type FSWatcher } from "node:fs";
 import path from "node:path";
 import { $app } from "../../context";
+import type { StandardSchemaV1 } from "../../lib/standard-schema";
 import { Resource, type IResource } from "../base";
 import { cfFetch, requireCloudflareAccountId } from "./api";
 
-export interface IWorker extends IResource {
+type WorkerEnvironment = Record<string, any>;
+
+export interface IWorker<Environment extends WorkerEnvironment>
+  extends IResource {
   kind: "worker";
   options: {
     entry: string;
     format?: "esm" | "cjs";
+    environment?: StandardSchemaV1<Environment>;
   };
 }
 
-export class Worker extends Resource<IWorker> {
+export class Worker<
+  Environment extends WorkerEnvironment = WorkerEnvironment
+> extends Resource<IWorker<Environment>> {
   readonly kind = "worker";
+
   private scriptEntry = path.join($app.cwd, this.options.entry);
   private scriptOutDir = path.join($app.out, this.id);
+
+  private async getEnvironment() {
+    if (!this.options.environment) {
+      return;
+    }
+    const env = await this.options.environment["~standard"].validate(
+      process.env
+    );
+    if (env.issues) {
+      throw new Error(
+        `Invalid environment variables: ${env.issues
+          .map((issue) => issue.message)
+          .join(", ")}`
+      );
+    }
+    await this.generateTypesFromEnvironment(env.value);
+    return env.value;
+  }
+
+  private async generateTypesFromEnvironment(env: WorkerEnvironment) {
+    let type = `interface Env {`;
+    for (const [key, value] of Object.entries(env)) {
+      type += `\n  ${key}: ${typeof value};`;
+    }
+    type += `\n}`;
+    await Bun.write(path.join($app.cwd, `${this.id}.d.ts`), type);
+  }
 
   async dev() {
     const watchers = new Map<string, FSWatcher>();
@@ -58,6 +93,7 @@ export class Worker extends Resource<IWorker> {
         name: this.name,
         scriptPath: script.path,
         modules: this.scriptFormat === "esm",
+        bindings: await this.getEnvironment(),
       });
       console.timeEnd("reload");
     };
@@ -73,6 +109,7 @@ export class Worker extends Resource<IWorker> {
       name: this.name,
       scriptPath: script.path,
       modules: this.scriptFormat === "esm",
+      bindings: await this.getEnvironment(),
     });
 
     return {

@@ -2,6 +2,7 @@ import { $app, enterContext } from "../src/context";
 import { Cache } from "../src/cli/cache";
 import { Worker } from "../src/resources/cloudflare/worker";
 import { requireCloudflareAccountId } from "../src/resources/cloudflare/api";
+import { z } from "zod";
 process.on("SIGINT", async () => {
   console.log("SIGINT");
   cache.save();
@@ -31,20 +32,17 @@ process.on("beforeExit", async () => {
 
 const worker = new Worker("test", {
   entry: "./test/worker-script.ts",
+  environment: z.object({
+    TEST_PLAIN_TEXT: z.string(),
+  }),
 });
-console.time("accountId");
-const accountId1 = await requireCloudflareAccountId();
-console.timeEnd("accountId");
-
-console.time("accountId2");
-const accountId2 = await requireCloudflareAccountId();
-console.timeEnd("accountId2");
+const script = await worker.dev();
 // const script = await worker.create();
-// console.log(script);
+console.log(script);
 
-// const server = Bun.serve({
-//   fetch: script.fetch,
-//   port: 3000,
-// });
+const server = Bun.serve({
+  fetch: script.fetch,
+  port: 3000,
+});
 
-// console.log(`Server is running on ${server.url}`);
+console.log(`Server is running on ${server.url}`);

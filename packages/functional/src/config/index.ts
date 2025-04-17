@@ -1,6 +1,6 @@
 import { defineConfig } from "./config";
-import { Worker } from "./worker";
 import { secret } from "./binding";
+import { Worker } from "../resources/cloudflare/worker";
 
 export { defineConfig, Worker, secret };
 
