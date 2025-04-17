@@ -1,27 +1,50 @@
-import { enterContext } from "../src/context";
+import { $app, enterContext } from "../src/context";
+import { Cache } from "../src/cli/cache";
 import { Worker } from "../src/resources/cloudflare/worker";
-
-process.on("SIGINT", () => {
+import { requireCloudflareAccountId } from "../src/resources/cloudflare/api";
+process.on("SIGINT", async () => {
   console.log("SIGINT");
-  script.stop();
+  cache.save();
   process.exit(0);
 });
+
+const cache = new Cache(
+  `${process.cwd()}/.functional/worker-script/.cache.json`
+);
 
 enterContext({
   name: "test",
   environment: "test",
   cwd: process.cwd(),
   out: `${process.cwd()}/.functional/worker-script`,
+  cache,
+});
+
+console.time("load");
+await cache.load();
+console.timeEnd("load");
+
+process.on("beforeExit", async () => {
+  console.log("beforeExit");
+  cache.save();
 });
 
 const worker = new Worker("test", {
   entry: "./test/worker-script.ts",
 });
-const script = await worker.dev();
+console.time("accountId");
+const accountId1 = await requireCloudflareAccountId();
+console.timeEnd("accountId");
 
-const server = Bun.serve({
-  fetch: script.fetch,
-  port: 3000,
-});
+console.time("accountId2");
+const accountId2 = await requireCloudflareAccountId();
+console.timeEnd("accountId2");
+// const script = await worker.create();
+// console.log(script);
 
-console.log(`Server is running on ${server.url}`);
+// const server = Bun.serve({
+//   fetch: script.fetch,
+//   port: 3000,
+// });
+
+// console.log(`Server is running on ${server.url}`);

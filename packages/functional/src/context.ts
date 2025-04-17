@@ -12,11 +12,8 @@ export interface Context {
 
 const storage = new AsyncLocalStorage<Context>();
 
-export function enterContext(context: Omit<Context, "cache">) {
-  return storage.enterWith({
-    ...context,
-    cache: new Cache(path.join(context.out, ".cache.json")),
-  });
+export function enterContext(context: Context) {
+  return storage.enterWith(context);
 }
 
 export function createContext<T>(

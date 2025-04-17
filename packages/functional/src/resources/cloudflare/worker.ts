@@ -20,10 +20,6 @@ export class Worker extends Resource<IWorker> {
   private scriptOutDir = path.join($app.out, this.id);
 
   async dev() {
-    console.time("import");
-    const { Miniflare } = await import("miniflare");
-    console.timeEnd("import");
-
     const watchers = new Map<string, FSWatcher>();
     let updatedAt = Date.now();
 
@@ -37,7 +33,7 @@ export class Worker extends Resource<IWorker> {
               // TODO: A better approach would be for the CLI to watch everything
               // and call a "reload" function here — the problem is we need
               // a way to know which file changes are relevant to this worker.
-              watchers.set(args.path, watch(args.path, handleChange));
+              watchers.set(args.path, watch(args.path, reload));
             }
           });
         },
@@ -45,8 +41,7 @@ export class Worker extends Resource<IWorker> {
       return await this.buildScript([devPlugin]);
     };
 
-    const handleChange: WatchListener<string> = async (event, filename) => {
-      console.log("change", event, filename);
+    const reload = async () => {
       const now = Date.now();
       updatedAt = now;
       console.time("rebuild");
@@ -57,21 +52,22 @@ export class Worker extends Resource<IWorker> {
         return;
       }
       console.time("reload");
-      // TODO: Figure out why exponential backoff doesn't fix this
-      await withExponentialBackoff(
-        async () =>
-          await miniflare.setOptions({
-            name: this.name,
-            scriptPath: script.path,
-            modules: this.scriptFormat === "esm",
-          })
-      );
+      // TODO: Figure out why this sometimes fails.
+      // We can try recreating the Miniflare instance, but we should check the performance impact.
+      await miniflare.setOptions({
+        name: this.name,
+        scriptPath: script.path,
+        modules: this.scriptFormat === "esm",
+      });
       console.timeEnd("reload");
     };
 
-    console.time("build");
-    const script = await buildDev();
-    console.timeEnd("build");
+    console.time("setup");
+    const [{ Miniflare }, script] = await Promise.all([
+      import("miniflare"),
+      buildDev(),
+    ]);
+    console.timeEnd("setup");
 
     const miniflare = new Miniflare({
       name: this.name,
@@ -83,11 +79,13 @@ export class Worker extends Resource<IWorker> {
       fetch(request: Request) {
         return miniflare.dispatchFetch(request) as unknown as Promise<Response>;
       },
-      stop() {
+      reload,
+      async stop() {
         for (const [path, watcher] of watchers.entries()) {
           console.log("closing watcher", path);
           watcher.close();
         }
+        await miniflare.dispose();
       },
     };
   }
@@ -101,10 +99,18 @@ export class Worker extends Resource<IWorker> {
   }
 
   async delete() {
+    console.time("accountId");
     const accountId = await requireCloudflareAccountId();
-    return await cfFetch(`accounts/${accountId}/workers/scripts/${this.name}`, {
-      method: "DELETE",
-    });
+    console.timeEnd("accountId");
+    console.time("delete");
+    const result = await cfFetch(
+      `accounts/${accountId}/workers/scripts/${this.name}`,
+      {
+        method: "DELETE",
+      }
+    );
+    console.timeEnd("delete");
+    return result;
   }
 
   private async putScript() {
@@ -188,3 +194,26 @@ const withExponentialBackoff = async <T>(
     }
   }
 };
+
+class Mutex {
+  private promise: Promise<unknown> | null = null;
+
+  async runWith<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.promise) {
+      console.log("waiting for previous promise");
+      return (await this.promise) as Promise<T>;
+    }
+    const { resolve, reject, promise } = Promise.withResolvers();
+    this.promise = promise;
+    try {
+      const result = await fn();
+      resolve(result);
+      return result;
+    } catch (error) {
+      reject(error);
+      throw error;
+    } finally {
+      this.promise = null;
+    }
+  }
+}
