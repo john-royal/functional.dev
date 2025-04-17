@@ -1,4 +1,4 @@
-import type Cloudflare from "cloudflare";
+import Cloudflare from "cloudflare";
 import assert from "node:assert";
 import { watch, type FSWatcher } from "node:fs";
 import path from "node:path";
@@ -6,8 +6,9 @@ import { $app } from "../../context";
 import type { StandardSchemaV1 } from "../../lib/standard-schema";
 import { Resource, type IResource } from "../base";
 import { cfFetch, requireCloudflareAccountId } from "./api";
-import type { IKVNamespace, KVNamespace } from "./kv";
+import type { IKVNamespace, KVNamespace } from "./kv-namespace";
 import { Log, LogLevel, type MiniflareOptions } from "miniflare";
+import { createHash } from "node:crypto";
 
 type WorkerEnvironment = Record<string, any>;
 
@@ -193,60 +194,38 @@ export class Worker<
   }
 
   async delete() {
-    console.time("accountId");
-    const accountId = await requireCloudflareAccountId();
-    console.timeEnd("accountId");
-    console.time("delete");
-    const result = await cfFetch(
-      `accounts/${accountId}/workers/scripts/${this.name}`,
-      {
-        method: "DELETE",
-      }
-    );
-    console.timeEnd("delete");
-    console.log(result);
+    await api.deleteScript(this.name);
   }
 
   private async putScript() {
-    const [script, accountId] = await Promise.all([
-      this.buildScript(),
-      requireCloudflareAccountId(),
-    ]);
-    const metadata = this.formatMetadata();
-
-    const formData = new FormData();
-
-    formData.append(
-      "metadata",
-      new Blob([JSON.stringify(metadata)], {
-        type: "application/json",
-      })
-    );
-    const scriptName = this.scriptFormat === "esm" ? "worker.js" : "script";
-    formData.append(
-      scriptName,
-      new Blob([await script.text()], {
-        type:
-          this.scriptFormat === "esm"
-            ? "application/javascript+module"
-            : "application/javascript",
-      }),
-      scriptName
-    );
-
-    return await cfFetch(`accounts/${accountId}/workers/scripts/${this.name}`, {
-      method: "PUT",
-      body: formData,
-    });
-  }
-
-  private formatMetadata() {
-    return {
+    const buildOutput = await this.buildScript();
+    const metadata: Cloudflare.Workers.Scripts.ScriptUpdateParams.Metadata = {
       compatibility_date: "2025-04-10",
       compatibility_flags: ["nodejs_compat_v2"],
-      main_module: this.scriptFormat === "esm" ? "worker.js" : undefined,
-      body_part: this.scriptFormat === "cjs" ? "script" : undefined,
-    } satisfies Cloudflare.Workers.Scripts.ScriptUpdateParams.Metadata;
+    };
+    const script = await (async () => {
+      switch (this.scriptFormat) {
+        case "esm":
+          metadata.main_module = "worker.js";
+          return {
+            name: "worker.js",
+            type: "application/javascript+module",
+            content: await buildOutput.text(),
+          };
+        case "cjs":
+          metadata.body_part = "script";
+          return {
+            name: "script",
+            type: "application/javascript",
+            content: await buildOutput.text(),
+          };
+      }
+    })();
+    return await api.putScript({
+      name: this.name,
+      script,
+      metadata,
+    });
   }
 
   private async buildScript(plugins: Bun.BunPlugin[] = []) {
@@ -269,45 +248,137 @@ export class Worker<
   }
 }
 
-const withExponentialBackoff = async <T>(
-  fn: () => Promise<T>,
-  maxRetries = 10,
-  initialDelay = 500
-) => {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      return await fn();
-    } catch (error) {
-      if (i === maxRetries - 1) {
-        throw error;
+const api = {
+  putScript: async (input: {
+    name: string;
+    script: {
+      name: string;
+      type: string;
+      content: string;
+    };
+    metadata: Cloudflare.Workers.Scripts.ScriptUpdateParams.Metadata;
+  }) => {
+    const accountId = await requireCloudflareAccountId();
+    const formData = new FormData();
+
+    formData.append(
+      "metadata",
+      new Blob([JSON.stringify(input.metadata)], {
+        type: "application/json",
+      })
+    );
+    formData.append(
+      input.script.name,
+      new Blob([input.script.content], {
+        type: input.script.type,
+      }),
+      input.script.name
+    );
+
+    return await cfFetch(
+      `/accounts/${accountId}/workers/scripts/${input.name}`,
+      {
+        method: "PUT",
+        body: formData,
       }
-      console.log("retrying", initialDelay * 2 ** i);
-      await new Promise((resolve) =>
-        setTimeout(resolve, initialDelay * 2 ** i)
+    );
+  },
+  deleteScript: async (name: string) => {
+    const accountId = await requireCloudflareAccountId();
+    return await cfFetch(`/accounts/${accountId}/workers/scripts/${name}`, {
+      method: "DELETE",
+    });
+  },
+  uploadAssets: async (
+    assets: {
+      name: string;
+      content: string;
+      type: string;
+    }[]
+  ) => {
+    const accountId = await requireCloudflareAccountId();
+
+    const manifest: Record<string, { hash: string; size: number }> = {};
+    const files = new Map<string, Blob>();
+    for (const asset of assets) {
+      const hash = createHash("sha256")
+        .update(asset.content)
+        .digest("hex")
+        .slice(0, 32);
+      manifest[asset.name] = {
+        hash,
+        size: asset.content.length,
+      };
+      files.set(
+        hash,
+        new Blob([Buffer.from(asset.content).toString("base64")], {
+          type: asset.type,
+        })
       );
     }
-  }
+
+    const { jwt, buckets } = await cfFetch<{
+      jwt: string;
+      buckets?: string[][];
+    }>(`/accounts/${accountId}/workers/assets-upload-session`, {
+      method: "POST",
+      body: JSON.stringify({ manifest }),
+    });
+
+    if (!buckets || buckets.length === 0) {
+      return {
+        jwt,
+      };
+    }
+
+    let completionToken = jwt;
+
+    for (const bucket of buckets) {
+      const formData = new FormData();
+      for (const fileHash of bucket) {
+        const file = files.get(fileHash);
+        if (!file) {
+          throw new Error(`File ${fileHash} not found`);
+        }
+        formData.append("files", file);
+      }
+      const uploadResponse = await cfFetch<{
+        jwt?: string;
+      }>(`/accounts/${accountId}/workers/assets/upload?base64=true`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${completionToken}`,
+        },
+        body: formData,
+      });
+      completionToken = uploadResponse.jwt ?? completionToken;
+    }
+
+    return {
+      jwt: completionToken,
+    };
+  },
+  getWorkersDevSubdomain: async () => {
+    const accountId = await requireCloudflareAccountId();
+    const res = await cfFetch<{
+      subdomain: string;
+    }>(`/accounts/${accountId}/workers/subdomains`, {
+      method: "GET",
+    });
+    return res.subdomain;
+  },
+  setWorkersDevEnabled: async (scriptName: string, enabled: boolean) => {
+    const accountId = await requireCloudflareAccountId();
+    await cfFetch(
+      `/accounts/${accountId}/workers/scripts/${scriptName}/subdomain`,
+      {
+        method: "POST",
+        body: JSON.stringify(
+          enabled
+            ? { enabled: true, previews_enabled: true }
+            : { enabled: false }
+        ),
+      }
+    );
+  },
 };
-
-class Mutex {
-  private promise: Promise<unknown> | null = null;
-
-  async runWith<T>(fn: () => Promise<T>): Promise<T> {
-    if (this.promise) {
-      console.log("waiting for previous promise");
-      return (await this.promise) as Promise<T>;
-    }
-    const { resolve, reject, promise } = Promise.withResolvers();
-    this.promise = promise;
-    try {
-      const result = await fn();
-      resolve(result);
-      return result;
-    } catch (error) {
-      reject(error);
-      throw error;
-    } finally {
-      this.promise = null;
-    }
-  }
-}
