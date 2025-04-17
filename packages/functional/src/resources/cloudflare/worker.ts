@@ -1,163 +1,190 @@
+import type Cloudflare from "cloudflare";
+import assert from "node:assert";
+import { watch, type FSWatcher, type WatchListener } from "node:fs";
+import path from "node:path";
 import { $app } from "../../context";
 import { Resource, type IResource } from "../base";
-import path from "node:path";
-import { cf, requireCloudflareAccountId } from "./api";
-import assert from "node:assert";
-import type Cloudflare from "cloudflare";
-import crypto from "node:crypto";
-import type { UploadCreateParams } from "cloudflare/resources/workers/scripts/assets.mjs";
+import { cfFetch, requireCloudflareAccountId } from "./api";
 
 export interface IWorker extends IResource {
   kind: "worker";
   options: {
     entry: string;
+    format?: "esm" | "cjs";
   };
 }
 
 export class Worker extends Resource<IWorker> {
   readonly kind = "worker";
+  private scriptEntry = path.join($app.cwd, this.options.entry);
+  private scriptOutDir = path.join($app.out, this.id);
+
+  async dev() {
+    console.time("import");
+    const { Miniflare } = await import("miniflare");
+    console.timeEnd("import");
+
+    const watchers = new Map<string, FSWatcher>();
+    let updatedAt = Date.now();
+
+    const buildDev = async () => {
+      const devPlugin: Bun.BunPlugin = {
+        name: "dev",
+        setup: (builder) => {
+          builder.onLoad({ filter: /\.(ts|js)$/ }, (args) => {
+            console.log("onLoad", args);
+            if (!watchers.has(args.path)) {
+              // TODO: A better approach would be for the CLI to watch everything
+              // and call a "reload" function here — the problem is we need
+              // a way to know which file changes are relevant to this worker.
+              watchers.set(args.path, watch(args.path, handleChange));
+            }
+          });
+        },
+      };
+      return await this.buildScript([devPlugin]);
+    };
+
+    const handleChange: WatchListener<string> = async (event, filename) => {
+      console.log("change", event, filename);
+      const now = Date.now();
+      updatedAt = now;
+      console.time("rebuild");
+      const script = await buildDev();
+      console.timeEnd("rebuild");
+      if (updatedAt > now) {
+        console.log("script changed during rebuild");
+        return;
+      }
+      console.time("reload");
+      // TODO: Figure out why exponential backoff doesn't fix this
+      await withExponentialBackoff(
+        async () =>
+          await miniflare.setOptions({
+            name: this.name,
+            scriptPath: script.path,
+            modules: this.scriptFormat === "esm",
+          })
+      );
+      console.timeEnd("reload");
+    };
+
+    console.time("build");
+    const script = await buildDev();
+    console.timeEnd("build");
+
+    const miniflare = new Miniflare({
+      name: this.name,
+      scriptPath: script.path,
+      modules: this.scriptFormat === "esm",
+    });
+
+    return {
+      fetch(request: Request) {
+        return miniflare.dispatchFetch(request) as unknown as Promise<Response>;
+      },
+      stop() {
+        for (const [path, watcher] of watchers.entries()) {
+          console.log("closing watcher", path);
+          watcher.close();
+        }
+      },
+    };
+  }
 
   async create() {
-    const bundle = await this.build();
-    const { manifest, files, entrypoint } = await this.prepareUpload(bundle);
-    console.dir({
-      manifest,
-      files,
-      entrypoint,
-    });
+    return await this.putScript();
+  }
+
+  async update() {
+    return await this.putScript();
+  }
+
+  async delete() {
     const accountId = await requireCloudflareAccountId();
-    let completionToken: string | undefined;
-    const upload = await cf.workers.scripts.assets.upload.create(this.id, {
-      account_id: accountId,
-      manifest,
+    return await cfFetch(`accounts/${accountId}/workers/scripts/${this.name}`, {
+      method: "DELETE",
     });
-    console.log(upload);
-    if (files.size > 1) {
-      assert(upload.jwt, "No JWT found");
-      assert(upload.buckets, "No buckets found");
-      completionToken = upload.jwt;
-      for (const bucket of upload.buckets) {
-        const formData = new FormData();
-        for (const fileHash of bucket) {
-          const file = files.get(fileHash);
-          assert(file, "File not found");
-          formData.append(fileHash, file, fileHash);
-        }
-        const response = await fetch(
-          `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/assets/upload?base64=true`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${completionToken}`,
-            },
-            body: formData,
-          }
-        );
-        assert(response.ok, "Failed to upload asset");
-        const data = (await response.json()) as {
-          result?: {
-            jwt?: string;
-          };
-        };
-        console.log(data);
-        if (data.result?.jwt) {
-          completionToken = data.result.jwt;
-        }
-      }
-    }
-    const metadata: Cloudflare.Workers.Scripts.ScriptUpdateParams.Metadata = {
-      compatibility_date: "2025-04-10",
-      compatibility_flags: ["nodejs_compat_v2"],
-      main_module: entrypoint.name,
-      assets: completionToken ? { jwt: completionToken } : undefined,
-    };
+  }
+
+  private async putScript() {
+    const [script, accountId] = await Promise.all([
+      this.buildScript(),
+      requireCloudflareAccountId(),
+    ]);
+    const metadata = this.formatMetadata();
+
     const formData = new FormData();
+
     formData.append(
       "metadata",
       new Blob([JSON.stringify(metadata)], {
         type: "application/json",
       })
     );
-    formData.append(entrypoint.name, entrypoint.content, entrypoint.name);
-    const res = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts/${this.id}`,
-      {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
-        },
-        body: formData,
-      }
+    const scriptName = this.scriptFormat === "esm" ? "worker.js" : "script";
+    formData.append(
+      scriptName,
+      new Blob([await script.text()], {
+        type:
+          this.scriptFormat === "esm"
+            ? "application/javascript+module"
+            : "application/javascript",
+      }),
+      scriptName
     );
-    const data = await res.json();
-    console.log(data);
-    return data;
-  }
 
-  update() {
-    return Promise.resolve({});
-  }
-
-  delete() {
-    return Promise.resolve({});
-  }
-
-  private async build() {
-    const result = await Bun.build({
-      entrypoints: [path.join($app.cwd, this.options.entry)],
-      target: "node",
-      format: "esm",
-      outdir: this.outdir,
+    return await cfFetch(`accounts/${accountId}/workers/scripts/${this.name}`, {
+      method: "PUT",
+      body: formData,
     });
-    return result.outputs;
   }
 
-  get outdir() {
-    return path.join($app.out, this.id);
+  private formatMetadata() {
+    return {
+      compatibility_date: "2025-04-10",
+      compatibility_flags: ["nodejs_compat_v2"],
+      main_module: this.scriptFormat === "esm" ? "worker.js" : undefined,
+      body_part: this.scriptFormat === "cjs" ? "script" : undefined,
+    } satisfies Cloudflare.Workers.Scripts.ScriptUpdateParams.Metadata;
   }
 
-  private async prepareUpload(outputs: Bun.BuildArtifact[]) {
-    const manifest: Record<string, UploadCreateParams.Manifest> = {};
-    const files = new Map<string, Blob>();
-    let entrypoint:
-      | {
-          name: string;
-          content: Blob;
-        }
-      | undefined;
-    await Promise.all(
-      outputs.map(async (output) => {
-        const path = "worker.js";
-        const content = await output.text();
-        const hash = crypto
-          .createHash("sha256")
-          .update(content)
-          .digest("hex")
-          .slice(0, 32);
-        manifest[path] = { hash, size: content.length };
-        files.set(
-          hash,
-          new Blob([Buffer.from(content).toString("base64")], {
-            type: "application/javascript+module",
-          })
-        );
-        console.log(files.get(hash), {
-          path,
-          hash,
-          size: output.size,
-          length: content.length,
-        });
-        if (output.kind === "entry-point") {
-          entrypoint = {
-            name: path,
-            content: new Blob([content], {
-              type: "application/javascript+module",
-            }),
-          };
-        }
-      })
-    );
-    assert(entrypoint, "No entry point found");
-    return { manifest, files, entrypoint };
+  private async buildScript(plugins: Bun.BunPlugin[] = []) {
+    const result = await Bun.build({
+      entrypoints: [this.scriptEntry],
+      target: "node",
+      format: this.scriptFormat,
+      outdir: this.scriptOutDir,
+      sourcemap: "inline",
+      plugins,
+    });
+    const output = result.outputs[0];
+    assert(output?.kind === "entry-point", "Expected entry point");
+    assert(result.outputs.length === 1, "Expected exactly one output");
+    return output;
+  }
+
+  private get scriptFormat() {
+    return this.options.format === "cjs" ? "cjs" : "esm";
   }
 }
+
+const withExponentialBackoff = async <T>(
+  fn: () => Promise<T>,
+  maxRetries = 10,
+  initialDelay = 500
+) => {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (i === maxRetries - 1) {
+        throw error;
+      }
+      console.log("retrying", initialDelay * 2 ** i);
+      await new Promise((resolve) =>
+        setTimeout(resolve, initialDelay * 2 ** i)
+      );
+    }
+  }
+};

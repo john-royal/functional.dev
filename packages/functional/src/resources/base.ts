@@ -11,11 +11,10 @@ export interface IResource {
 
 export abstract class Resource<T extends IResource> {
   abstract get kind(): T["kind"];
+  name: string;
 
-  constructor(readonly id: T["id"], readonly options: T["options"]) {}
-
-  get name() {
-    return [$app.name, $app.environment, this.id].join("-");
+  constructor(readonly id: T["id"], readonly options: T["options"]) {
+    this.name = [$app.name, $app.environment, this.id].join("-");
   }
 
   abstract create(): Promise<T["state"]>;
