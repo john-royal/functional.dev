@@ -3,7 +3,7 @@ import { Cache } from "../src/cli/cache";
 import { Worker } from "../src/resources/cloudflare/worker";
 import { requireCloudflareAccountId } from "../src/resources/cloudflare/api";
 import { z } from "zod";
-import { KVNamespace } from "../src/resources/cloudflare/kv";
+import { KVNamespace } from "../src/resources/cloudflare/kv-namespace";
 process.on("SIGINT", async () => {
   console.log("SIGINT");
   cache.save();

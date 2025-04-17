@@ -1,89 +1,220 @@
-import Cloudflare from "cloudflare";
-import assert from "node:assert";
-import { watch, type FSWatcher } from "node:fs";
-import path from "node:path";
-import { $app } from "../../context";
-import type { StandardSchemaV1 } from "../../lib/standard-schema";
-import { Resource, type IResource } from "../base";
+import assert from "assert";
+import type Cloudflare from "cloudflare";
+import { createHash } from "crypto";
+import { defineResource, type CreateResourceContext } from "../resource";
+import type { FunctionalScope } from "../util";
 import { cfFetch, requireCloudflareAccountId } from "./api";
-import type { IKVNamespace, KVNamespace } from "./kv-namespace";
-import { Log, LogLevel, type MiniflareOptions } from "miniflare";
-import { createHash } from "node:crypto";
+import type { AnyBinding, WorkersBindingKind } from "./binding";
+import type { MiniflareOptions } from "miniflare";
+import { watch, type FSWatcher } from "fs";
 
-type WorkerEnvironment = Record<string, any>;
-
-export interface IWorker<Environment extends WorkerEnvironment>
-  extends IResource {
-  kind: "worker";
-  options: {
-    entry: string;
-    format?: "esm" | "cjs";
-    environment?: StandardSchemaV1<Environment>;
-    bindings?: (KVNamespace | IKVNamespace["binding"])[];
-  };
+interface WorkerOptions {
+  name?: string;
+  entry: string;
+  format?: "esm" | "cjs";
+  bindings?: AnyBinding[];
 }
 
-export class Worker<
-  Environment extends WorkerEnvironment = WorkerEnvironment
-> extends Resource<IWorker<Environment>> {
-  readonly kind = "worker";
+export const Worker = defineResource({
+  kind: "worker",
+  create: async ({ self, options }: CreateResourceContext<WorkerOptions>) => {
+    return await putScript(self, options);
+  },
+  update: async ({ self, options }) => {
+    return await putScript(self, options);
+  },
+  delete: async ({ state }) => {
+    await api.deleteScript(state.name);
+  },
+  dev: async ({ self, options, state }) => {
+    const { Miniflare } = await import("miniflare");
+    const watchers = new Map<string, FSWatcher>();
 
-  private app = {
-    cwd: $app.cwd,
-    out: $app.out,
-  };
-
-  private scriptEntry = path.join(this.app.cwd, this.options.entry);
-  private scriptOutDir = path.join(this.app.out, this.id);
-
-  private async getEnvironment() {
-    if (!this.options.environment && !this.options.bindings) {
-      return {
-        environment: {},
-        kvNamespaces: [],
-      };
-    }
-    let environment: Record<string, any> = {};
-    if (this.options.environment) {
-      const env = await this.options.environment["~standard"].validate(
-        process.env
-      );
-      if (env.issues) {
-        throw new Error(
-          `Invalid environment variables: ${env.issues
-            .map((issue) => issue.message)
-            .join(", ")}`
-        );
-      }
-      environment = env.value;
-    }
-    const kvNamespaces = this.options.bindings?.map(
-      (binding): IKVNamespace["binding"] => {
-        if ("binding" in binding) {
-          return binding.binding();
+    const build = async () => {
+      const { scriptPath, files } = await dev.build(self, options);
+      const miniflareOptions = dev.formatMiniflareOptions({
+        name: options.name ?? self.name,
+        bindings: options.bindings ?? [],
+        format: options.format ?? "esm",
+        entry: scriptPath,
+      });
+      for (const file of files) {
+        if (!watchers.has(file)) {
+          watchers.set(file, watch(file, rebuild));
         }
-        return binding;
       }
-    );
-    await this.generateTypesFromEnvironment([
-      ...Object.entries(environment).map(([name, value]) => ({
-        name,
-        type: typeof value,
-      })),
-      ...(kvNamespaces ?? []).map((binding) => ({
-        name: binding.name,
-        type: "KVNamespace",
-      })),
-    ]);
-    return {
-      environment,
-      kvNamespaces,
+      return miniflareOptions;
     };
-  }
 
-  private async generateTypesFromEnvironment(
-    items: { name: string; type: string }[]
-  ) {
+    const rebuild = async () => {
+      const miniflareOptions = await build();
+      await miniflare.setOptions(miniflareOptions);
+    };
+
+    const miniflareOptions = await build();
+    const miniflare = new Miniflare(miniflareOptions);
+
+    await miniflare.ready;
+
+    return {
+      fetch: async (request: Request) => {
+        // Cloudflare response type doesn't match global.Response
+        return (await miniflare.dispatchFetch(request)) as any;
+      },
+      reload: async () => {
+        await rebuild();
+      },
+      stop: async () => {
+        for (const watcher of watchers.values()) {
+          watcher.close();
+        }
+        await miniflare.dispose();
+      },
+    };
+  },
+});
+
+const dev = {
+  build: async (self: FunctionalScope, options: WorkerOptions) => {
+    const files = new Set<string>();
+    const script = await build(self, options, {
+      plugins: [
+        {
+          name: "dev",
+          setup: (builder) => {
+            builder.onLoad({ filter: /\.(ts|js)$/ }, (args) => {
+              files.add(args.path);
+            });
+          },
+        },
+      ],
+    });
+    return {
+      scriptPath: script.path,
+      files,
+    };
+  },
+  formatMiniflareOptions: (input: {
+    name: string;
+    bindings: AnyBinding[];
+    format: "esm" | "cjs";
+    entry: string;
+  }): MiniflareOptions => {
+    const options: MiniflareOptions = {
+      name: input.name,
+      scriptPath: input.entry,
+      modules: input.format === "esm",
+    };
+    const bindings = util.resolveBindings(input.bindings ?? []);
+    for (const binding of bindings) {
+      switch (binding.type) {
+        case "hyperdrive":
+          options.hyperdrives = {
+            ...options.hyperdrives,
+            [binding.name]: binding.id,
+          };
+          break;
+        case "kv_namespace":
+          options.kvNamespaces = {
+            ...options.kvNamespaces,
+            [binding.name]: binding.namespace_id,
+          };
+          break;
+        case "r2_bucket":
+          options.r2Buckets = {
+            ...options.r2Buckets,
+            [binding.name]: binding.bucket_name,
+          };
+          break;
+        default:
+          throw new Error(`Unsupported binding type: ${binding.type}`);
+      }
+    }
+    return options;
+  },
+};
+
+const putScript = async (self: FunctionalScope, options: WorkerOptions) => {
+  const bindings = util.resolveBindings(options.bindings ?? []);
+  await util.writeTypesToFile(self, bindings);
+  const script = await build(self, options);
+  const formattedScript = format.script({
+    format: options.format ?? "esm",
+    script: await script.text(),
+  });
+  const metadata = format.metadata({
+    format: options.format ?? "esm",
+    bindings,
+  });
+  const result = await api.putScript({
+    name: options.name ?? self.name,
+    script: formattedScript,
+    metadata,
+  });
+  return {
+    name: options.name ?? self.name,
+    bindings,
+    result,
+  };
+};
+
+const build = async (
+  self: FunctionalScope,
+  workerOptions: WorkerOptions,
+  buildConfig?: Partial<Bun.BuildConfig>
+) => {
+  const result = await Bun.build({
+    entrypoints: [self.resolvePath(workerOptions.entry)],
+    target: "node",
+    format: workerOptions.format ?? "esm",
+    sourcemap: "inline",
+    outdir: self.output,
+    ...buildConfig,
+  });
+  const output = result.outputs[0];
+  assert(output?.kind === "entry-point", "Expected entry point");
+  assert(result.outputs.length === 1, "Expected exactly one output");
+  return output;
+};
+
+const util = {
+  TYPES: {
+    kv_namespace: "KVNamespace",
+    hyperdrive: "HyperdriveConfig",
+    r2_bucket: "R2Bucket",
+    plain_text: "string",
+    secret_text: "string",
+
+    json: "unknown",
+    ai: "unknown",
+    analytics_engine: "unknown",
+    assets: "unknown",
+    browser_rendering: "unknown",
+    d1: "unknown",
+    dispatch_namespace: "unknown",
+    durable_object_namespace: "unknown",
+    mtls_certificate: "unknown",
+    pipelines: "unknown",
+    queue: "unknown",
+    service: "unknown",
+    tail_consumer: "unknown",
+    vectorize: "unknown",
+    version_metadata: "unknown",
+    secrets_store_secret: "unknown",
+    secret_key: "unknown",
+  } satisfies Record<WorkersBindingKind["type"], string>,
+  resolveBindings: (bindings: AnyBinding[]) => {
+    return bindings.map((binding) => {
+      if ("create" in binding) {
+        return binding.create();
+      }
+      return binding;
+    });
+  },
+  writeTypesToFile: async (
+    scope: FunctionalScope,
+    items: WorkersBindingKind[]
+  ) => {
     const isValidPropName = (name: string) =>
       !!name.match(/^[a-zA-Z_][a-zA-Z0-9_]*$/);
     const file = [
@@ -98,155 +229,48 @@ export class Worker<
       "interface Env {",
       ...items.map(
         ({ name, type }) =>
-          `  ${isValidPropName(name) ? name : `"${name}"`}: ${type};`
+          `  ${isValidPropName(name) ? name : `"${name}"`}: ${
+            util.TYPES[type]
+          };`
       ),
       "}",
-      "",
-    ].join("\n");
-    await Bun.write(path.join(this.app.cwd, "worker-env.d.ts"), file);
-  }
+    ];
+    await Bun.write(scope.resolvePath("functional-env.d.ts"), file.join("\n"));
+  },
+};
 
-  async dev() {
-    const watchers = new Map<string, FSWatcher>();
-    let updatedAt = Date.now();
+type Metadata = Cloudflare.Workers.Scripts.ScriptUpdateParams.Metadata;
 
-    const buildMiniflareOptions = async (scriptPath: string) => {
-      const { environment, kvNamespaces } = await this.getEnvironment();
-      return {
-        name: this.name,
-        scriptPath,
-        modules: this.scriptFormat === "esm",
-        bindings: environment,
-        kvNamespaces: Object.fromEntries(
-          kvNamespaces?.map((binding) => [binding.name, binding.id]) ?? []
-        ),
-        log: new Log(LogLevel.VERBOSE),
-      } satisfies MiniflareOptions;
-    };
-
-    const buildDev = async () => {
-      const devPlugin: Bun.BunPlugin = {
-        name: "dev",
-        setup: (builder) => {
-          builder.onLoad({ filter: /\.(ts|js)$/ }, (args) => {
-            console.log("onLoad", args);
-            if (!watchers.has(args.path)) {
-              // TODO: A better approach would be for the CLI to watch everything
-              // and call a "reload" function here — the problem is we need
-              // a way to know which file changes are relevant to this worker.
-              watchers.set(args.path, watch(args.path, reload));
-            }
-          });
-        },
-      };
-      return await this.buildScript([devPlugin]);
-    };
-
-    const reload = async () => {
-      const now = Date.now();
-      updatedAt = now;
-      console.time("rebuild");
-      const script = await buildDev();
-      console.timeEnd("rebuild");
-      if (updatedAt > now) {
-        console.log("script changed during rebuild");
-        return;
-      }
-      console.time("reload");
-      // TODO: Figure out why this sometimes fails.
-      // We can try recreating the Miniflare instance, but we should check the performance impact.
-      await miniflare.setOptions(await buildMiniflareOptions(script.path));
-      console.timeEnd("reload");
-    };
-
-    console.time("setup");
-    const [{ Miniflare }, script] = await Promise.all([
-      import("miniflare"),
-      buildDev(),
-    ]);
-    console.timeEnd("setup");
-
-    const miniflare = new Miniflare(await buildMiniflareOptions(script.path));
-
+const format = {
+  metadata: (input: {
+    format: "esm" | "cjs";
+    bindings: WorkersBindingKind[];
+  }): Metadata => {
     return {
-      fetch(request: Request) {
-        return miniflare.dispatchFetch(
-          request as any
-        ) as unknown as Promise<Response>;
-      },
-      reload,
-      async stop() {
-        for (const [path, watcher] of watchers.entries()) {
-          console.log("closing watcher", path);
-          watcher.close();
-        }
-        await miniflare.dispose();
-      },
-    };
-  }
-
-  async create() {
-    return await this.putScript();
-  }
-
-  async update() {
-    return await this.putScript();
-  }
-
-  async delete() {
-    await api.deleteScript(this.name);
-  }
-
-  private async putScript() {
-    const buildOutput = await this.buildScript();
-    const metadata: Cloudflare.Workers.Scripts.ScriptUpdateParams.Metadata = {
       compatibility_date: "2025-04-10",
       compatibility_flags: ["nodejs_compat_v2"],
-    };
-    const script = await (async () => {
-      switch (this.scriptFormat) {
-        case "esm":
-          metadata.main_module = "worker.js";
-          return {
-            name: "worker.js",
-            type: "application/javascript+module",
-            content: await buildOutput.text(),
-          };
-        case "cjs":
-          metadata.body_part = "script";
-          return {
-            name: "script",
-            type: "application/javascript",
-            content: await buildOutput.text(),
-          };
-      }
-    })();
-    return await api.putScript({
-      name: this.name,
-      script,
-      metadata,
-    });
-  }
-
-  private async buildScript(plugins: Bun.BunPlugin[] = []) {
-    const result = await Bun.build({
-      entrypoints: [this.scriptEntry],
-      target: "node",
-      format: this.scriptFormat,
-      outdir: this.scriptOutDir,
-      sourcemap: "inline",
-      plugins,
-    });
-    const output = result.outputs[0];
-    assert(output?.kind === "entry-point", "Expected entry point");
-    assert(result.outputs.length === 1, "Expected exactly one output");
-    return output;
-  }
-
-  private get scriptFormat() {
-    return this.options.format === "cjs" ? "cjs" : "esm";
-  }
-}
+      main_module: input.format === "esm" ? "worker.js" : undefined,
+      body_part: input.format === "cjs" ? "script" : undefined,
+      bindings: input.bindings as Metadata["bindings"],
+    } satisfies Metadata;
+  },
+  script: (input: { format: "esm" | "cjs"; script: string }) => {
+    switch (input.format) {
+      case "esm":
+        return {
+          name: "worker.js",
+          type: "application/javascript+module",
+          content: input.script,
+        };
+      case "cjs":
+        return {
+          name: "script",
+          type: "application/javascript",
+          content: input.script,
+        };
+    }
+  },
+};
 
 const api = {
   putScript: async (input: {
@@ -256,7 +280,7 @@ const api = {
       type: string;
       content: string;
     };
-    metadata: Cloudflare.Workers.Scripts.ScriptUpdateParams.Metadata;
+    metadata: Metadata;
   }) => {
     const accountId = await requireCloudflareAccountId();
     const formData = new FormData();

@@ -10,7 +10,7 @@
     "functional": "./dist/cli"
   },
   "exports": {
-    ".": "./src/config/index.ts"
+    ".": "./src/config.ts"
   },
   "scripts": {
     "build": "bun build ./src/cli.ts --compile --outfile ./dist/cli --sourcemap"
@@ -29,7 +29,6 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250417.0",
     "@types/bun": "latest"
   },
   "peerDependencies": {

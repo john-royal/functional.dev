@@ -1,5 +1,5 @@
-import { $app } from "../../context";
 import assert from "node:assert";
+import { $functional } from "../util";
 
 interface CFMessage {
   code: number;
@@ -53,14 +53,17 @@ export async function requireCloudflareAccountId() {
   if (process.env.CLOUDFLARE_ACCOUNT_ID) {
     return process.env.CLOUDFLARE_ACCOUNT_ID;
   }
-  const accountId = await $app.cache.wrap("cloudflare-account-id", async () => {
-    const accounts = await cfFetch<
-      {
-        id: string;
-      }[]
-    >("accounts");
-    assert(accounts[0], "No account found");
-    return accounts[0].id;
-  });
+  const accountId = await $functional.store.fetch(
+    "cloudflare-account-id",
+    async () => {
+      const accounts = await cfFetch<
+        {
+          id: string;
+        }[]
+      >("accounts");
+      assert(accounts[0], "No account found");
+      return accounts[0].id;
+    }
+  );
   return accountId;
 }
