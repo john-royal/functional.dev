@@ -5,7 +5,9 @@
   "private": true,
   "scripts": {
     "dev": "functional dev",
-    "types": "functional types"
+    "types": "functional types",
+    "deploy": "functional deploy",
+    "remove": "functional remove"
   },
   "peerDependencies": {
     "typescript": "^5"

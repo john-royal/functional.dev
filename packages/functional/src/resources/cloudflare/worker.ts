@@ -150,13 +150,14 @@ const putScript = async (self: FunctionalScope, options: WorkerOptions) => {
     format: options.format ?? "esm",
     bindings,
   });
+  const name = (options.name ?? self.name).toLowerCase();
   const result = await api.putScript({
-    name: options.name ?? self.name,
+    name,
     script: formattedScript,
     metadata,
   });
   return {
-    name: options.name ?? self.name,
+    name,
     bindings,
     result,
   };

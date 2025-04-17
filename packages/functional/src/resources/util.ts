@@ -54,11 +54,12 @@ declare global {
   var functional: Functional;
 }
 
-export function configureFunctional(options: FunctionalOptions) {
+export async function configureFunctional(options: FunctionalOptions) {
   if (globalThis.functional) {
     throw new Error("Functional is already configured");
   }
   globalThis.functional = new Functional(options);
+  await globalThis.functional.store.load();
 }
 
 export const $functional = new Proxy({} as Functional, {

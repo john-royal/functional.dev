@@ -28,9 +28,13 @@ export class Store extends Map<string, unknown> {
 
   async load() {
     if (await this.file.exists()) {
-      const cache = await this.file.json();
-      for (const [key, value] of Object.entries(cache)) {
+      // console.log(`[functional] Loading store from ${this.file.name}`);
+      const file = await this.file.json();
+      console.log(file);
+      for (const [key, value] of Object.entries(file)) {
+        // console.log(`[functional] Loading ${key}`);
         this.set(key, value);
+        // console.log(this.get(key));
       }
     }
     this.isLoaded = true;
@@ -38,7 +42,7 @@ export class Store extends Map<string, unknown> {
 
   async save() {
     if (this.isTouched) {
-      await this.file.write(JSON.stringify(Object.fromEntries(this)));
+      await this.file.write(JSON.stringify(Object.fromEntries(this), null, 2));
       this.isTouched = false;
     }
   }
