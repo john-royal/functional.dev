@@ -72,6 +72,10 @@ export const Worker = defineResource({
       },
     };
   },
+  types: async ({ self, options }) => {
+    const bindings = util.resolveBindings(options.bindings ?? []);
+    await util.writeTypesToFile(self, bindings);
+  },
 });
 
 const dev = {

@@ -18,12 +18,9 @@ export class FunctionalScope {
     kind: string,
     private readonly parent: Functional
   ) {
-    this.globalId = [
-      parent.options.app.name,
-      parent.options.app.environment,
-      kind,
-      name,
-    ].join(":");
+    this.globalId = [parent.app.name, parent.app.environment, kind, name].join(
+      ":"
+    );
     this.output = path.join(parent.output, `${kind}-${name}`);
   }
 
@@ -32,12 +29,17 @@ export class FunctionalScope {
   }
 }
 
-class Functional {
+export class Functional {
+  app: {
+    name: string;
+    environment: string;
+  };
   output: string;
   store: Store;
   root: string;
 
-  constructor(readonly options: FunctionalOptions) {
+  constructor(options: FunctionalOptions) {
+    this.app = options.app;
     this.root = options.root ?? process.cwd();
     this.output = path.join(this.root, ".functional");
     this.store = new Store(path.join(this.output, "store.json"));
@@ -48,9 +50,22 @@ class Functional {
   }
 }
 
-export const $functional = new Functional({
-  app: {
-    name: "my-functional-app",
-    environment: "development",
+declare global {
+  var functional: Functional;
+}
+
+export function configureFunctional(options: FunctionalOptions) {
+  if (globalThis.functional) {
+    throw new Error("Functional is already configured");
+  }
+  globalThis.functional = new Functional(options);
+}
+
+export const $functional = new Proxy({} as Functional, {
+  get: (_, prop: keyof Functional) => {
+    if (!globalThis.functional) {
+      throw new Error("Functional is not configured");
+    }
+    return globalThis.functional[prop];
   },
 });

@@ -5,9 +5,7 @@ export * from "./resources/cloudflare";
 export interface Config {
   name: string;
   environment?: string;
-  setup: <
-    Resource extends ResourceOutput<string, any, any, any>
-  >() => Resource[];
+  setup: () => ResourceOutput<string, any, any, any>[];
 }
 
 export const defineConfig = (config: Config): Config => config;

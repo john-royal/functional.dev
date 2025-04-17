@@ -1,5 +1,5 @@
 import type { WorkersBindingKind } from "./cloudflare/binding";
-import type { FunctionalScope } from "./util";
+import { $functional, type FunctionalScope } from "./util";
 
 export interface CreateResourceContext<TOptions> {
   self: FunctionalScope;
@@ -34,6 +34,7 @@ export interface Resource<
     reload?: () => Promise<void>;
     stop?: () => Promise<void>;
   }>;
+  types?: (ctx: CreateResourceContext<TOptions>) => Promise<void>;
   binding?: (ctx: CreateBindingContext<TOptions, TState>) => TBinding;
 }
 
@@ -42,7 +43,11 @@ export type ResourceOutput<
   TOptions,
   TState,
   TBinding extends WorkersBindingKind | undefined
-> = any;
+> = {
+  resource: Resource<TKind, TOptions, TState, TBinding>;
+  scope: FunctionalScope;
+  options: TOptions;
+};
 
 export function defineResource<
   TKind extends string,
@@ -54,6 +59,15 @@ export function defineResource<
     name: string,
     options: TOptions
   ): ResourceOutput<TKind, TOptions, TState, TBinding> => {
-    return resource;
+    return {
+      resource,
+      options,
+      get scope() {
+        return $functional.scope({
+          name,
+          kind: resource.kind,
+        });
+      },
+    };
   };
 }
