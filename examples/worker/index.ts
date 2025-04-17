@@ -1,7 +1,8 @@
 export default {
   async fetch(request, env) {
+    const list = await env.MyBucket.list();
     return Response.json({
-      env,
+      list,
     });
   },
 } satisfies ExportedHandler<Env>;

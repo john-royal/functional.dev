@@ -18,11 +18,26 @@ interface CFResponseError {
   messages: CFMessage[];
   result: null;
 }
-type CFResponse<T> = CFResponseSuccess<T> | CFResponseError;
+interface CFResponseInternalError {
+  code: number;
+  error: string;
+}
+type CFResponse<T> =
+  | CFResponseSuccess<T>
+  | CFResponseError
+  | CFResponseInternalError;
 
 export class CFError extends Error {
-  constructor(readonly messages: CFMessage[], readonly status: number) {
-    super(messages.map((m) => m.message).join("\n"));
+  constructor(
+    readonly error: CFMessage[] | CFResponseInternalError,
+    readonly status: number,
+    readonly metadata?: Record<string, unknown>
+  ) {
+    super(
+      "error" in error
+        ? `Cloudflare API error: ${error.error} (code ${error.code})`
+        : error.map((e) => e.message).join("\n")
+    );
   }
 }
 
@@ -34,6 +49,7 @@ export async function cfFetch<T>(
   if (!apiToken) {
     throw new Error("CLOUDFLARE_API_TOKEN is not set");
   }
+  path = path.startsWith("/") ? path.slice(1) : path;
   const url = `https://api.cloudflare.com/client/v4/${path}`;
   const res = await fetch(url, {
     ...options,
@@ -43,10 +59,19 @@ export async function cfFetch<T>(
     },
   });
   const data = (await res.json()) as CFResponse<T>;
-  if (!data.success) {
-    throw new CFError(data.errors, res.status);
+  if ("success" in data) {
+    if (!data.success) {
+      throw new CFError(data.errors, res.status, {
+        url,
+        body: options?.body,
+      });
+    }
+    return data.result;
   }
-  return data.result;
+  throw new CFError(data, res.status, {
+    url,
+    body: options?.body,
+  });
 }
 
 export async function requireCloudflareAccountId() {
@@ -66,4 +91,8 @@ export async function requireCloudflareAccountId() {
     }
   );
   return accountId;
+}
+
+export function normalizeCloudflareName(name: string) {
+  return name.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
 }

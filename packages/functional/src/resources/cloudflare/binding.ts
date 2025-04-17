@@ -177,6 +177,8 @@ export type WorkersBindingKind =
   | WorkersBindingKindSecretsStoreSecret
   | WorkersBindingKindSecretKey;
 
+export const kFunctionalCreateBinding = "functional.createBinding";
+
 export type AnyBinding =
   | WorkersBindingKind
-  | { create: () => WorkersBindingKind };
+  | { [kFunctionalCreateBinding]: () => WorkersBindingKind };

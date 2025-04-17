@@ -2,9 +2,17 @@ import assert from "assert";
 import type Cloudflare from "cloudflare";
 import { createHash } from "crypto";
 import { defineResource, type CreateResourceContext } from "../resource";
-import type { FunctionalScope } from "../util";
-import { cfFetch, requireCloudflareAccountId } from "./api";
-import type { AnyBinding, WorkersBindingKind } from "./binding";
+import { $functional, type FunctionalScope } from "../util";
+import {
+  cfFetch,
+  normalizeCloudflareName,
+  requireCloudflareAccountId,
+} from "./api";
+import {
+  kFunctionalCreateBinding,
+  type AnyBinding,
+  type WorkersBindingKind,
+} from "./binding";
 import type { MiniflareOptions } from "miniflare";
 import { watch, type FSWatcher } from "fs";
 
@@ -13,15 +21,37 @@ interface WorkerOptions {
   entry: string;
   format?: "esm" | "cjs";
   bindings?: AnyBinding[];
+  url?: "workers.dev";
 }
 
 export const Worker = defineResource({
   kind: "worker",
   create: async ({ self, options }: CreateResourceContext<WorkerOptions>) => {
-    return await putScript(self, options);
+    const result = await putScript(self, options);
+    let url: string | null = null;
+    if (options.url === "workers.dev") {
+      const res = await api.setWorkersDevEnabled(result.name, true);
+      url = res.url;
+    }
+    return {
+      ...result,
+      url,
+    };
   },
-  update: async ({ self, options }) => {
-    return await putScript(self, options);
+  update: async ({ self, options, state }) => {
+    const result = await putScript(self, options);
+    let url = state.url;
+    if (!!url !== (options.url === "workers.dev")) {
+      const res = await api.setWorkersDevEnabled(
+        result.name,
+        options.url === "workers.dev"
+      );
+      url = res.url;
+    }
+    return {
+      ...result,
+      url,
+    };
   },
   delete: async ({ state }) => {
     await api.deleteScript(state.name);
@@ -150,7 +180,7 @@ const putScript = async (self: FunctionalScope, options: WorkerOptions) => {
     format: options.format ?? "esm",
     bindings,
   });
-  const name = (options.name ?? self.name).toLowerCase();
+  const name = normalizeCloudflareName(options.name ?? self.globalId);
   const result = await api.putScript({
     name,
     script: formattedScript,
@@ -210,8 +240,8 @@ const util = {
   } satisfies Record<WorkersBindingKind["type"], string>,
   resolveBindings: (bindings: AnyBinding[]) => {
     return bindings.map((binding) => {
-      if ("create" in binding) {
-        return binding.create();
+      if (kFunctionalCreateBinding in binding) {
+        return binding[kFunctionalCreateBinding]();
       }
       return binding;
     });
@@ -391,17 +421,21 @@ const api = {
     const accountId = await requireCloudflareAccountId();
     const res = await cfFetch<{
       subdomain: string;
-    }>(`/accounts/${accountId}/workers/subdomains`, {
+    }>(`/accounts/${accountId}/workers/subdomain`, {
       method: "GET",
     });
     return res.subdomain;
   },
   setWorkersDevEnabled: async (scriptName: string, enabled: boolean) => {
+    console.log("setting workers dev enabled", scriptName, enabled);
     const accountId = await requireCloudflareAccountId();
     await cfFetch(
       `/accounts/${accountId}/workers/scripts/${scriptName}/subdomain`,
       {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(
           enabled
             ? { enabled: true, previews_enabled: true }
@@ -409,5 +443,18 @@ const api = {
         ),
       }
     );
+    if (enabled) {
+      const subdomain = await $functional.store.fetch(
+        "cache:workers-dev-subdomain",
+        async () => api.getWorkersDevSubdomain()
+      );
+      return {
+        url: `https://${scriptName}.${subdomain}.workers.dev`,
+      };
+    } else {
+      return {
+        url: null,
+      };
+    }
   },
 };

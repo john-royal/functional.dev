@@ -7,4 +7,5 @@
 /// <reference types="@cloudflare/workers-types" />
 
 interface Env {
+  MyBucket: R2Bucket;
 }

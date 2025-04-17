@@ -1,4 +1,7 @@
-import type { WorkersBindingKind } from "./cloudflare/binding";
+import {
+  kFunctionalCreateBinding,
+  type WorkersBindingKind,
+} from "./cloudflare/binding";
 import { $functional, type FunctionalScope } from "./util";
 
 export interface CreateResourceContext<TOptions> {
@@ -26,6 +29,7 @@ export interface Resource<
   TBinding extends WorkersBindingKind | undefined = undefined
 > {
   kind: TKind;
+  sync?: (ctx: CreateResourceContext<TOptions>) => Promise<TState>;
   create?: (ctx: CreateResourceContext<TOptions>) => Promise<TState>;
   update?: (ctx: ActiveResourceContext<TOptions, TState>) => Promise<TState>;
   delete?: (ctx: ActiveResourceContext<TOptions, TState>) => Promise<void>;
@@ -47,6 +51,8 @@ export type ResourceOutput<
   resource: Resource<TKind, TOptions, TState, TBinding>;
   scope: FunctionalScope;
   options: TOptions;
+  binding: (name?: string) => TBinding;
+  [kFunctionalCreateBinding]: (name?: string) => TBinding;
 };
 
 export function defineResource<
@@ -67,6 +73,19 @@ export function defineResource<
           name,
           kind: resource.kind,
         });
+      },
+      [kFunctionalCreateBinding]: (name?: string) => {
+        if (!resource.binding) {
+          throw new Error(
+            `Resource "${name}" (${resource.kind}) is not bindable`
+          );
+        }
+        throw new Error(
+          `Internal error: Resource "${name}" (${resource.kind}) is bindable but the [kFunctionalCreateBinding] property is not set`
+        );
+      },
+      binding(name?: string) {
+        return this[kFunctionalCreateBinding](name);
       },
     };
   };

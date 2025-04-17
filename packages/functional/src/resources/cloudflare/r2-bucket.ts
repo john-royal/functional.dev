@@ -3,7 +3,12 @@ import {
   type CreateResourceContext,
   type Resource,
 } from "../resource";
-import { cfFetch, requireCloudflareAccountId } from "./api";
+import {
+  CFError,
+  cfFetch,
+  normalizeCloudflareName,
+  requireCloudflareAccountId,
+} from "./api";
 import type { WorkersBindingKindR2Bucket } from "./binding";
 
 interface R2BucketOptions {
@@ -49,6 +54,7 @@ export const R2Bucket = defineResource({
   kind: "r2-bucket",
   create: async ({ self, options }: CreateResourceContext<R2BucketOptions>) => {
     const accountId = await requireCloudflareAccountId();
+    const name = normalizeCloudflareName(options.name ?? self.globalId);
     const bucket = await cfFetch<R2BucketState>(
       `/accounts/${accountId}/r2/buckets`,
       {
@@ -58,10 +64,43 @@ export const R2Bucket = defineResource({
           "cf-r2-jurisdiction": options.jurisdiction ?? "default",
         },
         body: JSON.stringify({
-          name: options.name ?? self.globalId,
+          name,
           locationHint: options.locationHint,
           storageClass: options.storageClass,
         }),
+      }
+    ).catch(async (error) => {
+      if (error instanceof CFError && error.status === 409) {
+        throw new Error(
+          [
+            `[functional] R2 bucket "${name}" already exists.`,
+            `[functional] If you own the bucket, you can use the \`functional sync\` command to add the resource to this project.`,
+            "",
+            `Cloudflare API response:`,
+            JSON.stringify(
+              {
+                status: error.status,
+                error: error.error,
+                metadata: error.metadata,
+              },
+              null,
+              2
+            ),
+          ].join("\n")
+        );
+      }
+      throw error;
+    });
+    return bucket;
+  },
+  sync: async ({ self, options }) => {
+    const accountId = await requireCloudflareAccountId();
+    const bucket = await cfFetch<R2BucketState>(
+      `/accounts/${accountId}/r2/buckets/${normalizeCloudflareName(
+        options.name ?? self.globalId
+      )}`,
+      {
+        method: "GET",
       }
     );
     return bucket;

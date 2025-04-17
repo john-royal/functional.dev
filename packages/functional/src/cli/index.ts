@@ -4,6 +4,7 @@ import { Command, program } from "commander";
 import path from "path";
 import type { Config } from "../config";
 import { $functional, configureFunctional } from "../resources/util";
+import { kFunctionalCreateBinding } from "../resources/cloudflare/binding";
 
 const configure = async (): Promise<Config> => {
   const cwd = cli.getOptionValue("directory");
@@ -65,24 +66,46 @@ const cli = program
     new Command("deploy").description("Deploy the project").action(async () => {
       console.log(`[functional] Deploying project`);
       const config = await configure();
-      await Promise.all(
-        config.setup().map(async ({ resource, scope, options }) => {
-          const state = $functional.store.get(`state:${scope.globalId}`);
-          if (state) {
-            await resource.update?.({
+      for (const item of config.setup()) {
+        console.log("deploy", item.scope.globalId);
+        const { resource, scope, options } = item;
+        const createBinding = resource.binding;
+        if (typeof createBinding === "function") {
+          item[kFunctionalCreateBinding] = (name?: string) => {
+            return createBinding({
+              bindingNameOverride: name,
+              self: scope,
+              options,
+              get state() {
+                const state = $functional.store.get(`state:${scope.globalId}`);
+                if (!state) {
+                  throw new Error(
+                    `[functional] Resource ${scope.globalId} not found, cannot create binding`
+                  );
+                }
+                return state;
+              },
+            });
+          };
+        }
+        const state = $functional.store.get(`state:${scope.globalId}`);
+        if (state) {
+          if (resource.update) {
+            const newState = await resource.update?.({
               self: scope,
               options,
               state,
             });
-          } else {
-            const state = await resource.create?.({
-              self: scope,
-              options,
-            });
-            $functional.store.set(`state:${scope.globalId}`, state);
+            $functional.store.set(`state:${scope.globalId}`, newState);
           }
-        })
-      );
+        } else {
+          const newState = await resource.create?.({
+            self: scope,
+            options,
+          });
+          $functional.store.set(`state:${scope.globalId}`, newState);
+        }
+      }
       console.log(`[functional] Deployed project`);
       await $functional.store.save();
       console.log(`[functional] Exiting`);
@@ -116,11 +139,54 @@ const cli = program
     })
   )
   .addCommand(
+    new Command("sync").description("Sync the project").action(async () => {
+      const config = await configure();
+      for (const item of config.setup()) {
+        const { resource, scope, options } = item;
+        const createBinding = resource.binding;
+        if (typeof createBinding === "function") {
+          item[kFunctionalCreateBinding] = (name?: string) => {
+            const state = $functional.store.get(`state:${scope.globalId}`);
+            return createBinding({
+              bindingNameOverride: name,
+              self: scope,
+              options,
+              state,
+            });
+          };
+        }
+        console.log("sync", scope.globalId);
+        const state = await resource.sync?.({
+          self: scope,
+          options,
+        });
+        if (state) {
+          $functional.store.set(`state:${scope.globalId}`, state);
+        }
+      }
+      await $functional.store.save();
+      console.log(`[functional] Restored project`);
+    })
+  )
+  .addCommand(
     new Command("types")
       .description("Generate the types for the project")
       .action(async () => {
         const config = await configure();
-        for (const { resource, scope, options } of config.setup()) {
+        for (const item of config.setup()) {
+          const { resource, scope, options } = item;
+          const createBinding = resource.binding;
+          if (typeof createBinding === "function") {
+            item[kFunctionalCreateBinding] = (name?: string) => {
+              const state = $functional.store.get(`state:${scope.globalId}`);
+              return createBinding({
+                bindingNameOverride: name,
+                self: scope,
+                options,
+                state,
+              });
+            };
+          }
           await resource.types?.({
             self: scope,
             options,
