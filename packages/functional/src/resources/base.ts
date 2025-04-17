@@ -7,6 +7,7 @@ export interface IResource {
   id: string;
   options?: any;
   state?: any;
+  binding?: any;
 }
 
 export abstract class Resource<T extends IResource> {
@@ -17,7 +18,11 @@ export abstract class Resource<T extends IResource> {
     this.name = [$app.name, $app.environment, this.id].join("-");
   }
 
+  binding(name?: string): IResource["binding"] {
+    throw new Error("Not implemented");
+  }
+
   abstract create(): Promise<T["state"]>;
-  abstract update(): Promise<T["state"]>;
-  abstract delete(): Promise<T["state"]>;
+  abstract update(prevState: T["state"]): Promise<T["state"]>;
+  abstract delete(prevState: T["state"]): Promise<void>;
 }
