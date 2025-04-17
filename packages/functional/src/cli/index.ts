@@ -71,6 +71,9 @@ const cli = program
         const { resource, scope, options } = item;
         const createBinding = resource.binding;
         if (typeof createBinding === "function") {
+          console.log(
+            `[functional] Setting kFunctionalCreateBinding for ${scope.globalId}`
+          );
           item[kFunctionalCreateBinding] = (name?: string) => {
             return createBinding({
               bindingNameOverride: name,
@@ -145,6 +148,9 @@ const cli = program
         const { resource, scope, options } = item;
         const createBinding = resource.binding;
         if (typeof createBinding === "function") {
+          console.log(
+            `[functional] Setting kFunctionalCreateBinding for ${scope.globalId}`
+          );
           item[kFunctionalCreateBinding] = (name?: string) => {
             const state = $functional.store.get(`state:${scope.globalId}`);
             return createBinding({
@@ -172,11 +178,17 @@ const cli = program
     new Command("types")
       .description("Generate the types for the project")
       .action(async () => {
+        console.log("about to configure");
         const config = await configure();
+        console.log("about to run types");
         for (const item of config.setup()) {
+          console.log("types", item.scope.globalId);
           const { resource, scope, options } = item;
           const createBinding = resource.binding;
           if (typeof createBinding === "function") {
+            console.log(
+              `[functional] Setting kFunctionalCreateBinding for ${scope.globalId}`
+            );
             item[kFunctionalCreateBinding] = (name?: string) => {
               const state = $functional.store.get(`state:${scope.globalId}`);
               return createBinding({

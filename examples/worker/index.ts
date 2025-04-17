@@ -1,8 +1,11 @@
 export default {
   async fetch(request, env) {
-    const list = await env.MyBucket.list();
+    const bucket = await env.MyBucket.list();
+    const kv = await env.KV_WITH_CUSTOM_BINDING_NAME.get("test");
     return Response.json({
-      list,
+      bucket,
+      kv,
+      env: Object.keys(env),
     });
   },
 } satisfies ExportedHandler<Env>;

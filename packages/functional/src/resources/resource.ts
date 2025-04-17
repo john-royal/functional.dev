@@ -51,7 +51,9 @@ export type ResourceOutput<
   resource: Resource<TKind, TOptions, TState, TBinding>;
   scope: FunctionalScope;
   options: TOptions;
-  binding: (name?: string) => TBinding;
+  binding: (name?: string) => {
+    [kFunctionalCreateBinding]: (name?: string) => TBinding;
+  };
   [kFunctionalCreateBinding]: (name?: string) => TBinding;
 };
 
@@ -74,18 +76,21 @@ export function defineResource<
           kind: resource.kind,
         });
       },
-      [kFunctionalCreateBinding]: (name?: string) => {
+      [kFunctionalCreateBinding]() {
         if (!resource.binding) {
           throw new Error(
-            `Resource "${name}" (${resource.kind}) is not bindable`
+            `Resource "${this.scope.name}" (${resource.kind}) is not bindable`
           );
         }
         throw new Error(
-          `Internal error: Resource "${name}" (${resource.kind}) is bindable but the [kFunctionalCreateBinding] property is not set`
+          `Internal error: Resource "${this.scope.name}" (${resource.kind}) is bindable but the [kFunctionalCreateBinding] property is not set`
         );
       },
       binding(name?: string) {
-        return this[kFunctionalCreateBinding](name);
+        return {
+          [kFunctionalCreateBinding]: () =>
+            this[kFunctionalCreateBinding](name),
+        };
       },
     };
   };

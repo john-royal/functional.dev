@@ -30,7 +30,6 @@ export class Store extends Map<string, unknown> {
     if (await this.file.exists()) {
       // console.log(`[functional] Loading store from ${this.file.name}`);
       const file = await this.file.json();
-      console.log(file);
       for (const [key, value] of Object.entries(file)) {
         // console.log(`[functional] Loading ${key}`);
         this.set(key, value);

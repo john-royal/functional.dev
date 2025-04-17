@@ -8,4 +8,5 @@
 
 interface Env {
   MyBucket: R2Bucket;
+  KV_WITH_CUSTOM_BINDING_NAME: KVNamespace;
 }
