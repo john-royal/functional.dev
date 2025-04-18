@@ -18,6 +18,7 @@ import {
   type WorkersBindingKind,
   type WorkersBindingKindService,
 } from "./binding";
+import { unenvBuildPlugin } from "../../lib/unenv";
 
 interface WorkerOptions {
   name?: string;
@@ -293,6 +294,7 @@ const build = async (
       // Seems like a common practice: https://github.com/sst/sst/blob/3fc45526fcf751b382d4f886443e2b0766c91180/pkg/runtime/worker/worker.go#L128
       "import.meta.url": "/",
     },
+    plugins: [...(buildConfig?.plugins ?? []), unenvBuildPlugin()],
     ...buildConfig,
   });
   const output = result.outputs[0];
