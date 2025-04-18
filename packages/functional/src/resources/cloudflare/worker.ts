@@ -71,7 +71,7 @@ export const Worker = defineResource({
   delete: async ({ state }) => {
     await api.deleteScript(state.name);
   },
-  dev: async ({ self, options, state }) => {
+  dev: async ({ self, options }) => {
     const { Miniflare } = await import("miniflare");
     const watchers = new Map<string, FSWatcher>();
 
@@ -80,6 +80,7 @@ export const Worker = defineResource({
       const miniflareOptions = dev.formatMiniflareOptions({
         name: options.name ?? self.name,
         bindings: options.bindings ?? [],
+        assets: options.assets,
         format: options.format ?? "esm",
         entry: scriptPath,
       });
@@ -118,7 +119,7 @@ export const Worker = defineResource({
     };
   },
   types: async ({ self, options }) => {
-    await prepare(self, options);
+    await util.writeTypesToFile(self, util.resolveBindings(options));
   },
   binding: ({
     bindingNameOverride,
@@ -155,6 +156,7 @@ const dev = {
   formatMiniflareOptions: (input: {
     name: string;
     bindings: AnyBinding[];
+    assets: WorkerOptions["assets"];
     format: "esm" | "cjs";
     entry: string;
   }): MiniflareOptions => {
@@ -163,7 +165,10 @@ const dev = {
       scriptPath: input.entry,
       modules: input.format === "esm",
     };
-    const bindings = util.resolveBindings(input.bindings ?? []);
+    const bindings = util.resolveBindings({
+      bindings: input.bindings ?? [],
+      assets: input.assets,
+    });
     for (const binding of bindings) {
       switch (binding.type) {
         case "hyperdrive":
@@ -192,33 +197,15 @@ const dev = {
   },
 };
 
-const prepare = async (self: FunctionalScope, options: WorkerOptions) => {
-  const bindings = util.resolveBindings(options.bindings ?? []);
-  if (options.assets) {
-    bindings.push({
-      name: "ASSETS",
-      type: "assets",
-    });
-  }
-  await util.writeTypesToFile(self, bindings);
-  const assets = await readAssets(self, options);
-  return { bindings, assets };
-};
-
-const readAssets = async (self: FunctionalScope, options: WorkerOptions) => {
-  const directory = options.assets?.directory;
-  if (!directory) {
-    return null;
-  }
-  const directoryPath = self.resolvePath(directory);
-  const fileNames = await readdir(directoryPath, {
+const readAssets = async (directory: string) => {
+  const fileNames = await readdir(directory, {
     recursive: true,
   });
   const manifest: Record<string, { hash: string; size: number }> = {};
   const files = new Map<string, Blob>();
   await Promise.all(
     fileNames.map(async (fileName) => {
-      const file = Bun.file(path.join(directoryPath, fileName));
+      const file = Bun.file(path.join(directory, fileName));
       if ((await file.stat()).isDirectory()) {
         return;
       }
@@ -243,7 +230,8 @@ const readAssets = async (self: FunctionalScope, options: WorkerOptions) => {
 };
 
 const putScript = async (self: FunctionalScope, options: WorkerOptions) => {
-  const { bindings, assets } = await prepare(self, options);
+  const bindings = util.resolveBindings(options);
+  await util.writeTypesToFile(self, bindings);
   const name = normalizeCloudflareName(options.name ?? self.globalId);
   const script = await build(self, options);
   const formattedScript = format.script({
@@ -251,8 +239,12 @@ const putScript = async (self: FunctionalScope, options: WorkerOptions) => {
     script: await script.text(),
   });
   let assetsMetadata: Metadata["assets"] | undefined;
-  if (assets) {
-    const { jwt } = await api.uploadAssets(name, assets.manifest, assets.files);
+  let assetManifest: Record<string, { hash: string; size: number }> | undefined;
+  if (options.assets) {
+    const { manifest, files } = await readAssets(
+      self.resolvePath(options.assets.directory)
+    );
+    const { jwt } = await api.uploadAssets(name, manifest, files);
     assetsMetadata = {
       jwt,
       config: {
@@ -261,6 +253,7 @@ const putScript = async (self: FunctionalScope, options: WorkerOptions) => {
         run_worker_first: options.assets?.config?.runWorkerFirst,
       },
     };
+    assetManifest = manifest;
   }
   const metadata = format.metadata({
     format: options.format ?? "esm",
@@ -276,7 +269,7 @@ const putScript = async (self: FunctionalScope, options: WorkerOptions) => {
     name,
     bindings,
     result,
-    assets: assets?.manifest,
+    assets: assetManifest,
   };
 };
 
@@ -334,13 +327,22 @@ const util = {
     secrets_store_secret: "unknown",
     secret_key: "unknown",
   } satisfies Record<WorkersBindingKind["type"], string>,
-  resolveBindings: (bindings: AnyBinding[]) => {
-    return bindings.map((binding) => {
+  resolveBindings: (
+    options: Pick<WorkerOptions, "bindings" | "assets">
+  ): WorkersBindingKind[] => {
+    const bindings = (options.bindings ?? []).map((binding) => {
       if (kFunctionalCreateBinding in binding) {
         return binding[kFunctionalCreateBinding]();
       }
       return binding;
     });
+    if (options.assets) {
+      bindings.push({
+        name: "ASSETS",
+        type: "assets",
+      });
+    }
+    return bindings;
   },
   writeTypesToFile: async (
     scope: FunctionalScope,

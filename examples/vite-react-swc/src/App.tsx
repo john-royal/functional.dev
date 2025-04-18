@@ -5,8 +5,6 @@ import "./App.css";
 
 function App() {
   const [count, setCount] = useState(0);
-  // const [message, setMessage] = useState("Hello, world!");
-  // const [message2, setMessage2] = useState("Hello, world!");
 
   return (
     <>
