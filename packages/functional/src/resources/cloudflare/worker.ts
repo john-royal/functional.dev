@@ -309,7 +309,7 @@ const util = {
     r2_bucket: "R2Bucket",
     plain_text: "string",
     secret_text: "string",
-    assets: "{ fetch: typeof fetch }",
+    assets: "Fetcher",
 
     json: "unknown",
     ai: "unknown",

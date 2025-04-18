@@ -2,10 +2,9 @@
 //
 // biome-ignore lint/style: auto-generated file
 // eslint-disable
-// prettier-ignore
 
 /// <reference types="@cloudflare/workers-types" />
 
 interface Env {
-  ASSETS: { fetch: typeof fetch };
+  ASSETS: Fetcher;
 }
