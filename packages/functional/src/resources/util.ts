@@ -24,12 +24,12 @@ export class FunctionalScope {
     this.output = path.join(parent.output, `${kind}-${name}`);
   }
 
-  resolvePath(relativePath: string) {
-    return path.join(this.parent.root, relativePath);
+  resolvePath(...paths: string[]) {
+    return path.join(this.parent.root, ...paths);
   }
 
-  resolveOutputPath(relativePath: string) {
-    return path.join(this.output, relativePath);
+  resolveOutputPath(...paths: string[]) {
+    return path.join(this.output, ...paths);
   }
 }
 

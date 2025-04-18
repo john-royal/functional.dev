@@ -2,7 +2,9 @@ import assert from "assert";
 import type Cloudflare from "cloudflare";
 import { createHash } from "crypto";
 import { watch, type FSWatcher } from "fs";
+import { readdir } from "fs/promises";
 import type { MiniflareOptions } from "miniflare";
+import path from "path";
 import { defineResource, type CreateResourceContext } from "../resource";
 import { $functional, type FunctionalScope } from "../util";
 import {
@@ -23,6 +25,18 @@ interface WorkerOptions {
   format?: "esm" | "cjs";
   bindings?: AnyBinding[];
   url?: "workers.dev";
+  assets?: {
+    directory: string;
+    config?: {
+      htmlHandling?:
+        | "auto-trailing-slash"
+        | "force-trailing-slash"
+        | "drop-trailing-slash"
+        | "none";
+      notFoundHandling?: "none" | "404-page" | "single-page-application";
+      runWorkerFirst?: boolean;
+    };
+  };
 }
 
 export const Worker = defineResource({
@@ -104,8 +118,7 @@ export const Worker = defineResource({
     };
   },
   types: async ({ self, options }) => {
-    const bindings = util.resolveBindings(options.bindings ?? []);
-    await util.writeTypesToFile(self, bindings);
+    await prepare(self, options);
   },
   binding: ({
     bindingNameOverride,
@@ -179,19 +192,81 @@ const dev = {
   },
 };
 
-const putScript = async (self: FunctionalScope, options: WorkerOptions) => {
+const prepare = async (self: FunctionalScope, options: WorkerOptions) => {
   const bindings = util.resolveBindings(options.bindings ?? []);
+  if (options.assets) {
+    bindings.push({
+      name: "ASSETS",
+      type: "assets",
+    });
+  }
   await util.writeTypesToFile(self, bindings);
+  const assets = await readAssets(self, options);
+  return { bindings, assets };
+};
+
+const readAssets = async (self: FunctionalScope, options: WorkerOptions) => {
+  const directory = options.assets?.directory;
+  if (!directory) {
+    return null;
+  }
+  const directoryPath = self.resolvePath(directory);
+  const fileNames = await readdir(directoryPath, {
+    recursive: true,
+  });
+  const manifest: Record<string, { hash: string; size: number }> = {};
+  const files = new Map<string, Blob>();
+  await Promise.all(
+    fileNames.map(async (fileName) => {
+      const file = Bun.file(path.join(directoryPath, fileName));
+      if ((await file.stat()).isDirectory()) {
+        return;
+      }
+      const content = await file.bytes();
+      const hash = createHash("sha256")
+        .update(content)
+        .digest("hex")
+        .slice(0, 32);
+      // For some reason, the file name has to start with a slash, otherwise Cloudflare won't let us upload.
+      // They really should show an error message, but instead they just return a 200 with a null JWT.
+      if (!fileName.startsWith("/")) {
+        fileName = `/${fileName}`;
+      }
+      manifest[fileName] = {
+        hash,
+        size: content.length,
+      };
+      files.set(hash, new Blob([content.toBase64()], { type: file.type }));
+    })
+  );
+  return { manifest, files };
+};
+
+const putScript = async (self: FunctionalScope, options: WorkerOptions) => {
+  const { bindings, assets } = await prepare(self, options);
+  const name = normalizeCloudflareName(options.name ?? self.globalId);
   const script = await build(self, options);
   const formattedScript = format.script({
     format: options.format ?? "esm",
     script: await script.text(),
   });
+  let assetsMetadata: Metadata["assets"] | undefined;
+  if (assets) {
+    const { jwt } = await api.uploadAssets(name, assets.manifest, assets.files);
+    assetsMetadata = {
+      jwt,
+      config: {
+        html_handling: options.assets?.config?.htmlHandling,
+        not_found_handling: options.assets?.config?.notFoundHandling,
+        run_worker_first: options.assets?.config?.runWorkerFirst,
+      },
+    };
+  }
   const metadata = format.metadata({
     format: options.format ?? "esm",
     bindings,
+    assets: assetsMetadata,
   });
-  const name = normalizeCloudflareName(options.name ?? self.globalId);
   const result = await api.putScript({
     name,
     script: formattedScript,
@@ -201,6 +276,7 @@ const putScript = async (self: FunctionalScope, options: WorkerOptions) => {
     name,
     bindings,
     result,
+    assets: assets?.manifest,
   };
 };
 
@@ -240,11 +316,11 @@ const util = {
     r2_bucket: "R2Bucket",
     plain_text: "string",
     secret_text: "string",
+    assets: "{ fetch: typeof fetch }",
 
     json: "unknown",
     ai: "unknown",
     analytics_engine: "unknown",
-    assets: "unknown",
     browser_rendering: "unknown",
     d1: "unknown",
     dispatch_namespace: "unknown",
@@ -300,6 +376,7 @@ const format = {
   metadata: (input: {
     format: "esm" | "cjs";
     bindings: WorkersBindingKind[];
+    assets?: Metadata["assets"];
   }): Metadata => {
     return {
       compatibility_date: "2025-04-10",
@@ -307,6 +384,7 @@ const format = {
       main_module: input.format === "esm" ? "worker.js" : undefined,
       body_part: input.format === "cjs" ? "script" : undefined,
       bindings: input.bindings as Metadata["bindings"],
+      assets: input.assets,
     } satisfies Metadata;
   },
   script: (input: { format: "esm" | "cjs"; script: string }) => {
@@ -369,40 +447,34 @@ const api = {
     });
   },
   uploadAssets: async (
-    assets: {
-      name: string;
-      content: string;
-      type: string;
-    }[]
+    scriptName: string,
+    manifest: Record<string, { hash: string; size: number }>,
+    files: Map<string, Blob>
   ) => {
     const accountId = await requireCloudflareAccountId();
 
-    const manifest: Record<string, { hash: string; size: number }> = {};
-    const files = new Map<string, Blob>();
-    for (const asset of assets) {
-      const hash = createHash("sha256")
-        .update(asset.content)
-        .digest("hex")
-        .slice(0, 32);
-      manifest[asset.name] = {
-        hash,
-        size: asset.content.length,
-      };
-      files.set(
-        hash,
-        new Blob([Buffer.from(asset.content).toString("base64")], {
-          type: asset.type,
-        })
-      );
-    }
-
-    const { jwt, buckets } = await cfFetch<{
+    const res = await cfFetch<{
       jwt: string;
       buckets?: string[][];
-    }>(`/accounts/${accountId}/workers/assets-upload-session`, {
-      method: "POST",
-      body: JSON.stringify({ manifest }),
-    });
+    } | null>(
+      `/accounts/${accountId}/workers/scripts/${scriptName}/assets-upload-session`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ manifest }),
+      }
+    );
+    if (!res) {
+      throw new Error(
+        [
+          "Internal error: failed to create assets upload session, but the server returned a non-error response.",
+          "This is likely a problem with the asset manifest generated by Functional, but it sure would help if Cloudflare would actually return an error message.",
+        ].join("\n")
+      );
+    }
+    const { jwt, buckets } = res;
 
     if (!buckets || buckets.length === 0) {
       return {
@@ -419,7 +491,7 @@ const api = {
         if (!file) {
           throw new Error(`File ${fileHash} not found`);
         }
-        formData.append("files", file);
+        formData.append(fileHash, file, fileHash);
       }
       const uploadResponse = await cfFetch<{
         jwt?: string;
@@ -447,7 +519,6 @@ const api = {
     return res.subdomain;
   },
   setWorkersDevEnabled: async (scriptName: string, enabled: boolean) => {
-    console.log("setting workers dev enabled", scriptName, enabled);
     const accountId = await requireCloudflareAccountId();
     await cfFetch(
       `/accounts/${accountId}/workers/scripts/${scriptName}/subdomain`,

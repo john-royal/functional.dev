@@ -23,6 +23,7 @@ export class Store extends Map<string, unknown> {
     }
     const value = await fetcher();
     this.set(key, value);
+    await this.save();
     return value;
   }
 

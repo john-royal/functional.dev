@@ -58,7 +58,21 @@ export async function cfFetch<T>(
       ...options?.headers,
     },
   });
-  const data = (await res.json()) as CFResponse<T>;
+  const data = (await res.json().catch(() => {
+    throw new CFError(
+      {
+        code: res.status,
+        error: `Server returned ${
+          res.status
+        } with non-JSON body (${res.headers.get("content-type")})`,
+      },
+      res.status,
+      {
+        url,
+        body: options?.body,
+      }
+    );
+  })) as CFResponse<T>;
   if ("success" in data) {
     if (!data.success) {
       throw new CFError(data.errors, res.status, {
