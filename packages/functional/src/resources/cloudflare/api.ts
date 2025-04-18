@@ -1,5 +1,7 @@
+import type { HeadersInit } from "bun";
 import assert from "node:assert";
 import { $functional } from "../util";
+import { getWranglerAccessToken } from "./api-auth";
 
 interface CFMessage {
   code: number;
@@ -45,16 +47,13 @@ export async function cfFetch<T>(
   path: string,
   options?: RequestInit
 ): Promise<T> {
-  const apiToken = process.env.CLOUDFLARE_API_TOKEN;
-  if (!apiToken) {
-    throw new Error("CLOUDFLARE_API_TOKEN is not set");
-  }
+  const auth = await getCloudflareAuthHeaders();
   path = path.startsWith("/") ? path.slice(1) : path;
   const url = `https://api.cloudflare.com/client/v4/${path}`;
   const res = await fetch(url, {
     ...options,
     headers: {
-      Authorization: `Bearer ${apiToken}`,
+      ...auth,
       ...options?.headers,
     },
   });
@@ -86,6 +85,28 @@ export async function cfFetch<T>(
     url,
     body: options?.body,
   });
+}
+
+async function getCloudflareAuthHeaders(): Promise<HeadersInit> {
+  const apiToken = process.env.CLOUDFLARE_API_TOKEN;
+  if (apiToken) {
+    return {
+      Authorization: `Bearer ${apiToken}`,
+    };
+  }
+  const key = process.env.CLOUDFLARE_API_KEY;
+  const email = process.env.CLOUDFLARE_EMAIL;
+  if (key && email) {
+    return {
+      "X-Auth-Email": email,
+      "X-Auth-Key": key,
+    };
+  }
+  const token = await getWranglerAccessToken();
+  console.log(`using wrangler token: ${token}`);
+  return {
+    Authorization: `Bearer ${token}`,
+  };
 }
 
 export async function requireCloudflareAccountId() {
