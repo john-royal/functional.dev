@@ -162,12 +162,14 @@ const cli = program
           };
         }
         console.log("sync", scope.globalId);
-        const state = await resource.sync?.({
+        const currentState = $functional.store.get(`state:${scope.globalId}`);
+        const newState = await resource.sync?.({
           self: scope,
           options,
+          state: currentState,
         });
-        if (state) {
-          $functional.store.set(`state:${scope.globalId}`, state);
+        if (newState) {
+          $functional.store.set(`state:${scope.globalId}`, newState);
         }
       }
       await $functional.store.save();

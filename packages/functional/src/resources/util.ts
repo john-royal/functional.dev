@@ -27,6 +27,10 @@ export class FunctionalScope {
   resolvePath(relativePath: string) {
     return path.join(this.parent.root, relativePath);
   }
+
+  resolveOutputPath(relativePath: string) {
+    return path.join(this.output, relativePath);
+  }
 }
 
 export class Functional {

@@ -30,6 +30,21 @@ export const KVNamespace = defineResource({
     );
     return response;
   },
+  sync: async ({ self, options, state }) => {
+    if (!state) {
+      throw new Error(
+        `[functional] Cannot sync KVNamespace "${self.globalId}" because the ID is unknown`
+      );
+    }
+    const accountId = await requireCloudflareAccountId();
+    const response = await cfFetch<KVNamespaceState>(
+      `/accounts/${accountId}/storage/kv/namespaces/${state.id}`,
+      {
+        method: "GET",
+      }
+    );
+    return response;
+  },
   delete: async ({ state }) => {
     const accountId = await requireCloudflareAccountId();
     await cfFetch(`/accounts/${accountId}/storage/kv/namespaces/${state.id}`, {

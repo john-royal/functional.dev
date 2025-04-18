@@ -7,6 +7,7 @@
 /// <reference types="@cloudflare/workers-types" />
 
 interface Env {
+  MyHyperdrive: Hyperdrive;
   MyBucket: R2Bucket;
   KV_WITH_CUSTOM_BINDING_NAME: KVNamespace;
 }

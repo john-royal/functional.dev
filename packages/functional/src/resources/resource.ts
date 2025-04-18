@@ -22,6 +22,12 @@ export interface ActiveResourceContext<TOptions, TState> {
   state: TState;
 }
 
+export interface SyncResourceContext<TOptions, TState> {
+  self: FunctionalScope;
+  options: TOptions;
+  state?: TState;
+}
+
 export interface Resource<
   TKind extends string,
   TOptions,
@@ -29,7 +35,7 @@ export interface Resource<
   TBinding extends WorkersBindingKind | undefined = undefined
 > {
   kind: TKind;
-  sync?: (ctx: CreateResourceContext<TOptions>) => Promise<TState>;
+  sync?: (ctx: SyncResourceContext<TOptions, TState>) => Promise<TState>;
   create?: (ctx: CreateResourceContext<TOptions>) => Promise<TState>;
   update?: (ctx: ActiveResourceContext<TOptions, TState>) => Promise<TState>;
   delete?: (ctx: ActiveResourceContext<TOptions, TState>) => Promise<void>;

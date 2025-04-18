@@ -1,6 +1,8 @@
 import assert from "assert";
 import type Cloudflare from "cloudflare";
 import { createHash } from "crypto";
+import { watch, type FSWatcher } from "fs";
+import type { MiniflareOptions } from "miniflare";
 import { defineResource, type CreateResourceContext } from "../resource";
 import { $functional, type FunctionalScope } from "../util";
 import {
@@ -13,8 +15,6 @@ import {
   type AnyBinding,
   type WorkersBindingKind,
 } from "./binding";
-import type { MiniflareOptions } from "miniflare";
-import { watch, type FSWatcher } from "fs";
 
 interface WorkerOptions {
   name?: string;
@@ -200,10 +200,19 @@ const build = async (
 ) => {
   const result = await Bun.build({
     entrypoints: [self.resolvePath(workerOptions.entry)],
-    target: "node",
-    format: workerOptions.format ?? "esm",
-    sourcemap: "inline",
     outdir: self.output,
+    format: workerOptions.format ?? "esm",
+    target: "node",
+    conditions: ["workerd", "worker", "browser"],
+    external: ["cloudflare:workers"],
+    minify: true,
+    sourcemap: "inline",
+    define: {
+      // The `require` function polyfill, createRequire, uses import.meta.url as the base path.
+      // However, import.meta.url is undefined on Cloudflare Workers, so we need to set it to "/" manually.
+      // Seems like a common practice: https://github.com/sst/sst/blob/3fc45526fcf751b382d4f886443e2b0766c91180/pkg/runtime/worker/worker.go#L128
+      "import.meta.url": "/",
+    },
     ...buildConfig,
   });
   const output = result.outputs[0];
@@ -215,7 +224,7 @@ const build = async (
 const util = {
   TYPES: {
     kv_namespace: "KVNamespace",
-    hyperdrive: "HyperdriveConfig",
+    hyperdrive: "Hyperdrive",
     r2_bucket: "R2Bucket",
     plain_text: "string",
     secret_text: "string",
