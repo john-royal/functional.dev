@@ -1,7 +1,7 @@
 import type { HeadersInit } from "bun";
 import assert from "node:assert";
 import { $functional } from "../util";
-import { getWranglerAccessToken } from "./api-auth";
+import { getWranglerAccessToken } from "./api-oauth";
 
 interface CFMessage {
   code: number;
@@ -103,7 +103,6 @@ async function getCloudflareAuthHeaders(): Promise<HeadersInit> {
     };
   }
   const token = await getWranglerAccessToken();
-  console.log(`using wrangler token: ${token}`);
   return {
     Authorization: `Bearer ${token}`,
   };
