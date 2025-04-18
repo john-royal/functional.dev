@@ -234,9 +234,9 @@ const putScript = async (self: FunctionalScope, options: WorkerOptions) => {
   await util.writeTypesToFile(self, bindings);
   const name = normalizeCloudflareName(options.name ?? self.globalId);
   const script = await build(self, options);
-  const formattedScript = format.script({
+  const formattedScript = await format.script({
     format: options.format ?? "esm",
-    script: await script.text(),
+    script,
   });
   let assetsMetadata: Metadata["assets"] | undefined;
   let assetManifest: Record<string, { hash: string; size: number }> | undefined;
@@ -286,7 +286,7 @@ const build = async (
     conditions: ["workerd", "worker", "browser"],
     external: ["cloudflare:workers"],
     minify: true,
-    sourcemap: "inline",
+    sourcemap: "external",
     define: {
       // The `require` function polyfill, createRequire, uses import.meta.url as the base path.
       // However, import.meta.url is undefined on Cloudflare Workers, so we need to set it to "/" manually.
@@ -297,7 +297,6 @@ const build = async (
   });
   const output = result.outputs[0];
   assert(output?.kind === "entry-point", "Expected entry point");
-  assert(result.outputs.length === 1, "Expected exactly one output");
   return output;
 };
 
@@ -387,21 +386,37 @@ const format = {
       body_part: input.format === "cjs" ? "script" : undefined,
       bindings: input.bindings as Metadata["bindings"],
       assets: input.assets,
+      observability: {
+        enabled: true,
+      },
     } satisfies Metadata;
   },
-  script: (input: { format: "esm" | "cjs"; script: string }) => {
+  script: async (input: {
+    format: "esm" | "cjs";
+    script: Bun.BuildArtifact;
+  }) => {
+    const content = await input.script.text();
+    const sourcemap = input.script.sourcemap
+      ? {
+          name: "worker.js.map",
+          type: "application/source-map",
+          content: await input.script.sourcemap.text(),
+        }
+      : undefined;
     switch (input.format) {
       case "esm":
         return {
           name: "worker.js",
           type: "application/javascript+module",
-          content: input.script,
+          content,
+          sourcemap,
         };
       case "cjs":
         return {
           name: "script",
           type: "application/javascript",
-          content: input.script,
+          content,
+          sourcemap,
         };
     }
   },
@@ -414,6 +429,11 @@ const api = {
       name: string;
       type: string;
       content: string;
+      sourcemap?: {
+        name: string;
+        type: string;
+        content: string;
+      };
     };
     metadata: Metadata;
   }) => {
@@ -433,7 +453,15 @@ const api = {
       }),
       input.script.name
     );
-
+    if (input.script.sourcemap) {
+      formData.append(
+        input.script.sourcemap.name,
+        new Blob([input.script.sourcemap.content], {
+          type: input.script.sourcemap.type,
+        }),
+        input.script.sourcemap.name
+      );
+    }
     return await cfFetch(
       `/accounts/${accountId}/workers/scripts/${input.name}`,
       {
