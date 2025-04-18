@@ -234,10 +234,22 @@ const putScript = async (self: FunctionalScope, options: WorkerOptions) => {
   await util.writeTypesToFile(self, bindings);
   const name = normalizeCloudflareName(options.name ?? self.globalId);
   const script = await build(self, options);
-  const formattedScript = format.script({
-    format: options.format ?? "esm",
-    script: await script.text(),
-  });
+  const formattedScript = Object.assign(
+    {},
+    format.script({
+      format: options.format ?? "esm",
+      script: await script.entrypoint.text(),
+    }),
+    {
+      sourcemap: script.sourcemap
+        ? {
+            name: path.parse(script.sourcemap.path).name,
+            type: "application/source-map",
+            content: await script.sourcemap.text(),
+          }
+        : undefined,
+    }
+  );
   let assetsMetadata: Metadata["assets"] | undefined;
   let assetManifest: Record<string, { hash: string; size: number }> | undefined;
   if (options.assets) {
@@ -284,21 +296,96 @@ const build = async (
     format: workerOptions.format ?? "esm",
     target: "node",
     conditions: ["workerd", "worker", "browser"],
-    external: ["cloudflare:workers"],
-    minify: true,
-    sourcemap: "inline",
+    external: ["node:*", "cloudflare:workers"],
+    minify: false,
+    sourcemap: "external",
     define: {
       // The `require` function polyfill, createRequire, uses import.meta.url as the base path.
       // However, import.meta.url is undefined on Cloudflare Workers, so we need to set it to "/" manually.
       // Seems like a common practice: https://github.com/sst/sst/blob/3fc45526fcf751b382d4f886443e2b0766c91180/pkg/runtime/worker/worker.go#L128
       "import.meta.url": "/",
+      "navigator.userAgent": "Functional.dev",
+      "process.env.NODE_ENV": "production",
     },
+    plugins: [
+      {
+        name: "node-http-polyfill",
+        setup: (builder) => {
+          const resolved = new Map<string, string>();
+          const hybridNodeCompatModules = [
+            "async_hooks",
+            "console",
+            "crypto",
+            "process",
+            // "module",
+            "tls",
+            "util",
+          ];
+          builder.onResolve(
+            {
+              filter: /^(node:)?(async_hooks|console|crypto|process|tls|util)$/,
+            },
+            (args) => {
+              const mod = args.path.replace("node:", "");
+              if (args.importer.includes("@cloudflare/unenv-preset")) {
+                console.log(
+                  `skipping unenv polyfill for ${args.path} at ${resolved.get(
+                    mod
+                  )} by ${args.importer}`
+                );
+                return null;
+              }
+              if (resolved.has(mod)) {
+                return {
+                  path: resolved.get(mod)!,
+                };
+              }
+              const unenv = Bun.fileURLToPath(
+                import.meta.resolve(`@cloudflare/unenv-preset/node/${mod}`)
+              );
+              resolved.set(mod, unenv);
+              console.log(
+                `using cloudflare unenv polyfill for ${args.path} at ${unenv}`
+              );
+              return {
+                path: unenv,
+              };
+            }
+          );
+          builder.onResolve(
+            {
+              filter:
+                /^(node:)?(fs|fs\/promises|http|https|child_process|os|tty)$/,
+            },
+            (args) => {
+              const mod = args.path.replace("node:", "");
+              if (resolved.has(mod)) {
+                return {
+                  path: resolved.get(mod)!,
+                };
+              }
+              const unenv = Bun.fileURLToPath(
+                import.meta.resolve(`unenv/node/${mod}`)
+              );
+              if (!unenv) {
+                console.warn(`cannot find polyfill for ${args.path}`);
+              }
+              resolved.set(mod, unenv);
+              console.log(`using unenv polyfill for ${args.path} at ${unenv}`);
+              return {
+                path: unenv,
+              };
+            }
+          );
+        },
+      },
+    ],
     ...buildConfig,
   });
-  const output = result.outputs[0];
-  assert(output?.kind === "entry-point", "Expected entry point");
-  assert(result.outputs.length === 1, "Expected exactly one output");
-  return output;
+  const entrypoint = result.outputs.find((o) => o.kind === "entry-point");
+  const sourcemap = result.outputs.find((o) => o.kind === "sourcemap");
+  assert(entrypoint, "Expected entry point");
+  return { entrypoint, sourcemap };
 };
 
 const util = {
@@ -387,6 +474,9 @@ const format = {
       body_part: input.format === "cjs" ? "script" : undefined,
       bindings: input.bindings as Metadata["bindings"],
       assets: input.assets,
+      observability: {
+        enabled: true,
+      },
     } satisfies Metadata;
   },
   script: (input: { format: "esm" | "cjs"; script: string }) => {
@@ -414,6 +504,11 @@ const api = {
       name: string;
       type: string;
       content: string;
+      sourcemap?: {
+        name: string;
+        type: "application/source-map";
+        content: string;
+      };
     };
     metadata: Metadata;
   }) => {
@@ -433,6 +528,18 @@ const api = {
       }),
       input.script.name
     );
+    if (input.script.sourcemap) {
+      formData.append(
+        input.script.sourcemap.name,
+        new File(
+          [input.script.sourcemap.content],
+          input.script.sourcemap.name,
+          {
+            type: input.script.sourcemap.type,
+          }
+        )
+      );
+    }
 
     return await cfFetch(
       `/accounts/${accountId}/workers/scripts/${input.name}`,

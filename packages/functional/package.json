@@ -21,9 +21,11 @@
     "url": "https://github.com/john-royal/functional.dev.git"
   },
   "dependencies": {
+    "@cloudflare/unenv-preset": "^2.3.1",
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
     "miniflare": "^4.20250410.1",
+    "unenv": "^2.0.0-rc.15",
     "xdg-app-paths": "^8.3.0",
     "zod": "^3.24.2"
   },
