@@ -1,6 +1,6 @@
-import { Pool } from "pg";
 import assert from "assert";
 import { AsyncLocalStorage } from "async_hooks";
+import { Pool } from "pg";
 
 export default {
   async fetch(request, env) {
@@ -10,19 +10,15 @@ export default {
       connectionString: env.MyHyperdrive.connectionString,
     });
     const { rows } = await db.query("SELECT * from teams");
-    assert(true, "test");
-    const storage = new AsyncLocalStorage<{
-      db: Pool;
-    }>();
-    storage.run({ db }, async () => {
-      const { rows } = await db.query("SELECT * from teams");
-      assert(true, "test");
-    });
+    const sample = await env.Auxiliary.fetch(
+      new Request("https://example.com")
+    );
     return Response.json({
       bucket,
       kv,
       env: Object.keys(env),
       rows,
+      sample: await sample.json(),
     });
   },
 } satisfies ExportedHandler<Env>;

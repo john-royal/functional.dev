@@ -14,6 +14,7 @@ import {
   kFunctionalCreateBinding,
   type AnyBinding,
   type WorkersBindingKind,
+  type WorkersBindingKindService,
 } from "./binding";
 
 interface WorkerOptions {
@@ -106,6 +107,16 @@ export const Worker = defineResource({
     const bindings = util.resolveBindings(options.bindings ?? []);
     await util.writeTypesToFile(self, bindings);
   },
+  binding: ({
+    bindingNameOverride,
+    self,
+    options,
+  }): WorkersBindingKindService => ({
+    name: bindingNameOverride ?? self.name,
+    type: "service",
+    environment: "",
+    service: normalizeCloudflareName(options.name ?? self.globalId),
+  }),
 });
 
 const dev = {
@@ -225,6 +236,7 @@ const util = {
   TYPES: {
     kv_namespace: "KVNamespace",
     hyperdrive: "Hyperdrive",
+    service: "Service",
     r2_bucket: "R2Bucket",
     plain_text: "string",
     secret_text: "string",
@@ -240,7 +252,6 @@ const util = {
     mtls_certificate: "unknown",
     pipelines: "unknown",
     queue: "unknown",
-    service: "unknown",
     tail_consumer: "unknown",
     vectorize: "unknown",
     version_metadata: "unknown",

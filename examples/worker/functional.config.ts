@@ -14,11 +14,21 @@ export default defineConfig({
     });
     const bucket = R2Bucket("MyBucket", {});
     const kv = KVNamespace("MyKV", {});
+    const auxiliary = Worker("Auxiliary", {
+      entry: "./auxiliary.ts",
+      url: "workers.dev",
+      bindings: [],
+    });
     const worker = Worker("Main", {
       entry: "./index.ts",
       url: "workers.dev",
-      bindings: [hyperdrive, bucket, kv.binding("KV_WITH_CUSTOM_BINDING_NAME")],
+      bindings: [
+        hyperdrive,
+        bucket,
+        kv.binding("KV_WITH_CUSTOM_BINDING_NAME"),
+        auxiliary,
+      ],
     });
-    return [hyperdrive, bucket, kv, worker];
+    return [hyperdrive, bucket, kv, auxiliary, worker];
   },
 });
