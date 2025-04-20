@@ -2,11 +2,13 @@ import { $ } from "bun";
 import path from "node:path";
 import { CLI_MODE, VERSION } from "./constants";
 import type { CLIConfig } from "./types";
+import dedent from "dedent";
 
 export class InitCommand {
   pkgFile: Bun.BunFile;
   pkg: Promise<{
     name?: string;
+    scripts?: Record<string, string>;
     packageManager?: string;
     devDependencies?: Record<string, string>;
   }>;
@@ -43,22 +45,22 @@ export class InitCommand {
 
   async ensureGitignore() {
     const file = Bun.file(path.join(this.config.directory, ".gitignore"));
-    const content = [await file.text().catch(() => "")];
+    let content = (await file.text().catch(() => "")).trim();
     let write = false;
     if (!content.includes("node_modules")) {
-      content.push("", "# dependencies", "node_modules");
+      content += "\n\n# dependencies\nnode_modules";
       write = true;
     }
     if (!content.includes(".functional")) {
-      content.push("", "# functional", ".functional");
+      content += "\n\n# functional\n.functional";
       write = true;
     }
     if (!content.includes(".env")) {
-      content.push("", "# environment", ".env");
+      content += "\n\n# environment\n.env";
       write = true;
     }
     if (write) {
-      await file.write(content.join("\n").trim() + "\n");
+      await file.write(content + "\n");
     }
   }
 
@@ -70,14 +72,15 @@ export class InitCommand {
     const projectName =
       (await this.pkg).name ?? path.basename(this.config.directory);
     await file.write(
-      `import { defineConfig } from "functional.dev/config";
+      dedent`import { defineConfig } from "functional.dev/config";
     
     export default defineConfig({
       name: "${projectName}",
       setup: () => {
         // Define your setup here
       },
-    });`
+    });
+    `
     );
   }
 }
@@ -93,11 +96,12 @@ const detectPackageManagerFromLockfile = async (
     "bun.lock": "bun",
   } as const;
   for (const [lockfileName, packageManager] of Object.entries(lockfiles)) {
+    // TODO: Detect workspace lockfile
     const file = Bun.file(path.join(directory, lockfileName));
     if (await file.exists()) {
       return packageManager;
     }
   }
-  console.log("No lockfile found, using bun");
+  // TODO: Prompt user to select package manager
   return "bun";
 };

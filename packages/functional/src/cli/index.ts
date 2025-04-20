@@ -3,6 +3,7 @@ import chalk from "chalk";
 import { version } from "../../package.json" with { type: "json" };
 import type { CLIConfig } from "./types";
 import { InitCommand } from "./init";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 console.log(`
 ${chalk.greenBright("functional.dev")}
@@ -27,19 +28,26 @@ program
   );
 
 program.command("init").action(async () => {
-  const { directory, config } = program.opts<CLIConfig>();
-  const init = new InitCommand({ directory, config });
+  const config = program.opts<CLIConfig>();
+  const init = new InitCommand(config);
   await init.run();
-  console.log("init");
 });
 
-program.hook("preAction", (command) => {
-  const { directory, config } = command.opts<CLIConfig>();
-  console.log("preAction", directory, config);
+const storage = new AsyncLocalStorage<{
+  config: CLIConfig;
+}>();
+
+program.hook("preAction", (command, actionCommand) => {
+  if (actionCommand.name() === "init") {
+    return;
+  }
+  const config = command.opts<CLIConfig>();
+  storage.enterWith({ config });
 });
 
 program.command("dev").action(() => {
-  console.log("dev");
+  const { config } = storage.getStore()!;
+  console.log("dev", config);
 });
 
 program.command("build").action(() => {
