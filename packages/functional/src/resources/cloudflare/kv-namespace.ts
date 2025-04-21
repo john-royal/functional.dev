@@ -56,4 +56,9 @@ export const KVNamespace = defineResource({
     type: "kv_namespace",
     namespace_id: state.id,
   }),
-} satisfies Resource<"kv-namespace", KVNamespaceOptions, KVNamespaceState, WorkersBindingKindKVNamespace>);
+} satisfies Resource<
+  "kv-namespace",
+  KVNamespaceOptions,
+  KVNamespaceState,
+  WorkersBindingKindKVNamespace
+>);
