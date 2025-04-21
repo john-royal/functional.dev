@@ -5,6 +5,7 @@ import { watch, type FSWatcher } from "fs";
 import { readdir } from "fs/promises";
 import type { MiniflareOptions } from "miniflare";
 import path from "path";
+import { unenvCloudflarePlugin } from "../../lib/unenv";
 import { defineResource, type CreateResourceContext } from "../resource";
 import { $functional, type FunctionalScope } from "../util";
 import {
@@ -18,7 +19,6 @@ import {
   type WorkersBindingKind,
   type WorkersBindingKindService,
 } from "./binding";
-import { unenvBuildPlugin } from "../../lib/unenv";
 
 interface WorkerOptions {
   name?: string;
@@ -245,7 +245,9 @@ const putScript = async (self: FunctionalScope, options: WorkerOptions) => {
     const { manifest, files } = await readAssets(
       self.resolvePath(options.assets.directory)
     );
+    console.time("uploadAssets");
     const { jwt } = await api.uploadAssets(name, manifest, files);
+    console.timeEnd("uploadAssets");
     assetsMetadata = {
       jwt,
       config: {
@@ -261,11 +263,13 @@ const putScript = async (self: FunctionalScope, options: WorkerOptions) => {
     bindings,
     assets: assetsMetadata,
   });
+  console.time("putScript");
   const result = await api.putScript({
     name,
     script: formattedScript,
     metadata,
   });
+  console.timeEnd("putScript");
   return {
     name,
     bindings,
@@ -279,27 +283,30 @@ const build = async (
   workerOptions: WorkerOptions,
   buildConfig?: Partial<Bun.BuildConfig>
 ) => {
-  const result = await Bun.build({
-    entrypoints: [self.resolvePath(workerOptions.entry)],
-    outdir: self.output,
-    format: workerOptions.format ?? "esm",
-    target: "node",
-    conditions: ["workerd", "worker", "browser"],
-    external: ["cloudflare:workers"],
-    minify: true,
-    sourcemap: "external",
-    define: {
-      // The `require` function polyfill, createRequire, uses import.meta.url as the base path.
-      // However, import.meta.url is undefined on Cloudflare Workers, so we need to set it to "/" manually.
-      // Seems like a common practice: https://github.com/sst/sst/blob/3fc45526fcf751b382d4f886443e2b0766c91180/pkg/runtime/worker/worker.go#L128
-      "import.meta.url": "/",
-    },
-    plugins: [...(buildConfig?.plugins ?? []), unenvBuildPlugin()],
-    ...buildConfig,
-  });
-  const output = result.outputs[0];
-  assert(output?.kind === "entry-point", "Expected entry point");
-  return output;
+  return await import("../../lib/esbuild").then((m) =>
+    m.build(self.resolvePath(workerOptions.entry), self.output)
+  );
+  // const result = await Bun.build({
+  //   entrypoints: [self.resolvePath(workerOptions.entry)],
+  //   outdir: self.output,
+  //   format: workerOptions.format ?? "esm",
+  //   target: "node",
+  //   conditions: ["workerd", "worker", "browser"],
+  //   external: ["cloudflare:workers"],
+  //   minify: false,
+  //   sourcemap: "external",
+  //   define: {
+  //     // The `require` function polyfill, createRequire, uses import.meta.url as the base path.
+  //     // However, import.meta.url is undefined on Cloudflare Workers, so we need to set it to "/" manually.
+  //     // Seems like a common practice: https://github.com/sst/sst/blob/3fc45526fcf751b382d4f886443e2b0766c91180/pkg/runtime/worker/worker.go#L128
+  //     "import.meta.url": "/",
+  //   },
+  //   plugins: [...(buildConfig?.plugins ?? []), unenvCloudflarePlugin()],
+  //   ...buildConfig,
+  // });
+  // const output = result.outputs[0];
+  // assert(output?.kind === "entry-point", "Expected entry point");
+  // return output;
 };
 
 const util = {
@@ -395,9 +402,10 @@ const format = {
   },
   script: async (input: {
     format: "esm" | "cjs";
-    script: Bun.BuildArtifact;
+    script: Bun.BuildArtifact | (Bun.BunFile & { sourcemap: Bun.BunFile });
   }) => {
-    const content = await input.script.text();
+    let content = await input.script.text();
+    content = [MODULE_PATCH, content.replace(MODULE_PATCH, "")].join("\n");
     const sourcemap = input.script.sourcemap
       ? {
           name: "worker.js.map",
@@ -581,3 +589,33 @@ const api = {
     }
   },
 };
+
+const MODULE_PATCH = `var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __moduleCache = /* @__PURE__ */ new WeakMap;
+var __toCommonJS = (from) => {
+  var entry = __moduleCache.get(from), desc;
+  if (entry)
+    return entry;
+  entry = __defProp({}, "__esModule", { value: true });
+  if (from && typeof from === "object" || typeof from === "function")
+    __getOwnPropNames(from).map((key) => !__hasOwnProp.call(entry, key) && __defProp(entry, key, {
+      get: () => from[key],
+      enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable
+    }));
+  __moduleCache.set(from, entry);
+  return entry;
+};
+var __commonJS = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, {
+      get: all[name],
+      enumerable: true,
+      configurable: true,
+      set: (newValue) => all[name] = () => newValue
+    });
+};
+var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);`;
