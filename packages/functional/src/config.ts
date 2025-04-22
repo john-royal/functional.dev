@@ -1,11 +1,7 @@
-import type { ResourceOutput } from "./resources/resource";
-
-export * from "./resources/cloudflare";
-
-export interface Config {
+interface Config {
   name: string;
   environment?: string;
-  setup: () => ResourceOutput<string, any, any, any>[];
+  setup: () => void;
 }
 
 export const defineConfig = (config: Config): Config => config;
