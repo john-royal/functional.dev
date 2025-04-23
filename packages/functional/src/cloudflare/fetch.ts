@@ -1,62 +1,101 @@
-import { Console, Effect, Schema } from "effect";
-import {
-  FetchHttpClient,
-  HttpBody,
-  HttpClient,
-  HttpClientRequest,
-  HttpClientResponse,
-  HttpMethod,
-  Headers,
-} from "@effect/platform";
-import { AuthHeaders } from "./auth";
+import { err, ok, ResultAsync } from "neverthrow";
+import { z } from "zod";
 
-const CFMessage = Schema.Struct({
-  code: Schema.Number,
-  message: Schema.String,
+const CFMessage = z.object({
+  code: z.number(),
+  message: z.string(),
 });
+type CFMessage = z.infer<typeof CFMessage>;
 
-const CFResponse = <T>(schema: Schema.Schema<T>) =>
-  Schema.Union(
-    Schema.Struct({
-      success: Schema.Literal(false),
-      errors: Schema.Array(CFMessage),
-      messages: Schema.Array(CFMessage),
+const CFResponse = <TResult>(result: z.ZodSchema<TResult>) =>
+  z.discriminatedUnion("success", [
+    z.object({
+      success: z.literal(true),
+      errors: z.array(CFMessage),
+      messages: z.array(CFMessage),
+      result,
     }),
-    Schema.Struct({
-      success: Schema.Literal(true),
-      errors: Schema.Array(CFMessage),
-      messages: Schema.Array(CFMessage),
-      result: schema,
-    })
-  );
-type CFResponse<T> = ReturnType<typeof CFResponse<T>>["Type"];
+    z.object({
+      success: z.literal(false),
+      errors: z.array(CFMessage),
+      messages: z.array(CFMessage),
+      result: z.null(),
+    }),
+  ]);
+type CFResponse<TResult> = z.infer<ReturnType<typeof CFResponse<TResult>>>;
 
-export const cfFetch = <T>(
-  method: HttpMethod.HttpMethod,
-  path: `/${string}`,
-  schema: Schema.Schema<T>,
-  body: HttpBody.HttpBody = HttpBody.empty,
-  headers: Headers.Input = Headers.empty
-) =>
-  Effect.gen(function* () {
-    const auth = yield* AuthHeaders;
-    const http = yield* HttpClient.HttpClient;
-    const res = yield* HttpClientRequest.make(method)(path).pipe(
-      HttpClientRequest.prependUrl("https://api.cloudflare.com/client/v4"),
-      HttpClientRequest.setHeaders(auth),
-      HttpClientRequest.setHeaders(headers),
-      HttpClientRequest.setBody(body),
-      http.execute,
-      Effect.flatMap(
-        HttpClientResponse.schemaBodyJson(CFResponse(schema), {
-          onExcessProperty: "preserve",
-        })
-      ),
-      Effect.tap(Console.log),
+export interface CFFetchOptions<TBody, TResponse> {
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  path: `/${string}`;
+  body?: TBody;
+  headers?: Record<string, string>;
+  schema: z.ZodSchema<TResponse>;
+}
 
-      Effect.flatMap((res) =>
-        res.success ? Effect.succeed(res.result) : Effect.fail(res.errors)
-      )
-    );
-    return res;
-  });
+export class APIError extends Error {}
+
+export class FetchError extends APIError {
+  constructor(cause?: unknown) {
+    super("Failed to fetch", { cause });
+  }
+}
+
+export class JSONError extends APIError {
+  constructor(cause?: unknown) {
+    super("Failed to parse JSON", { cause });
+  }
+}
+
+export class UnexpectedResponseError extends APIError {
+  constructor(readonly zodError: z.ZodError) {
+    super("Unexpected response");
+  }
+}
+
+export class CloudflareError extends APIError {
+  constructor(
+    readonly errors: CFMessage[],
+    readonly messages: CFMessage[]
+  ) {
+    super("Cloudflare error");
+  }
+}
+
+// unexpected error types:
+// - failed to fetch
+// - invalid json
+// expected error types:
+// - server returned error
+
+export const cfFetch = <TBody, TResponse>({
+  method,
+  path,
+  body,
+  headers,
+  schema,
+}: CFFetchOptions<TBody, TResponse>): ResultAsync<TResponse, APIError> => {
+  const url = `https://api.cloudflare.com/client/v4${path}`;
+  return ResultAsync.fromPromise(
+    fetch(url, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    }),
+    (err) => new FetchError(err)
+  )
+    .map((res) =>
+      res.json().catch((err) => {
+        throw new JSONError(err);
+      })
+    )
+    .andThen((json) => {
+      const parsed = CFResponse(schema).safeParse(json);
+      if (!parsed.success)
+        return err(new UnexpectedResponseError(parsed.error));
+      const { data } = parsed;
+      if (!data.success || !data.result) {
+        return err(new CloudflareError(data.errors, data.messages));
+      }
+      return ok(data.result);
+    });
+};

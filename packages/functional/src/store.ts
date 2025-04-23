@@ -1,33 +1,55 @@
-import { Context, Effect } from "effect";
-import path from "path";
+import { okAsync, type ResultAsync } from "neverthrow";
 
-interface IStore {
-  readonly get: <T>(key: string) => Effect.Effect<T | undefined>;
-  readonly set: <T>(key: string, value: T) => Effect.Effect<void>;
+export class Store extends Map<string, unknown> {
+  private file: Bun.BunFile;
+  private isLoaded = false;
+  private isTouched = false;
+
+  constructor(path: string) {
+    super();
+    this.file = Bun.file(path);
+  }
+
+  get<T>(key: string): T | undefined {
+    return super.get(key) as T | undefined;
+  }
+
+  set(key: string, value: unknown): this {
+    super.set(key, value);
+    this.isTouched = true;
+    return this;
+  }
+
+  fetch<T, E extends Error>(
+    key: string,
+    fetcher: () => ResultAsync<T, E>
+  ): ResultAsync<T, E> {
+    if (this.has(key)) {
+      return okAsync(this.get(key) as T);
+    }
+    return fetcher().andThen((value) => {
+      this.set(key, value);
+      return okAsync(value);
+    });
+  }
+
+  async load() {
+    if (await this.file.exists()) {
+      // console.log(`[functional] Loading store from ${this.file.name}`);
+      const file = await this.file.json();
+      for (const [key, value] of Object.entries(file)) {
+        // console.log(`[functional] Loading ${key}`);
+        this.set(key, value);
+        // console.log(this.get(key));
+      }
+    }
+    this.isLoaded = true;
+  }
+
+  async save() {
+    if (this.isTouched) {
+      await this.file.write(JSON.stringify(Object.fromEntries(this), null, 2));
+      this.isTouched = false;
+    }
+  }
 }
-
-export class Store extends Context.Tag("Store")<Store, IStore>() {}
-
-const file = Bun.file(path.join(process.cwd(), "store.json"));
-const promise = Effect.promise(
-  (): Promise<Record<string, unknown>> => file.json().catch(() => ({}))
-);
-
-export const StoreLive = Store.of({
-  get<T>(key: string) {
-    return promise.pipe(
-      Effect.map((content) => content[key] as unknown as T | undefined)
-    );
-  },
-  set(key, value) {
-    return promise.pipe(
-      Effect.map((content) => {
-        content[key] = value;
-        return content;
-      }),
-      Effect.tap((content) =>
-        Effect.promise(() => file.write(JSON.stringify(content, null, 2)))
-      )
-    );
-  },
-} as IStore);
