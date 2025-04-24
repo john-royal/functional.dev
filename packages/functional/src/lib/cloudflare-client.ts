@@ -1,5 +1,6 @@
-import { okAsync, type ResultAsync } from "neverthrow";
+import { err, ok, okAsync, type ResultAsync } from "neverthrow";
 import { z } from "zod";
+import { $store } from "../app";
 import { CloudflareAuth } from "./cloudflare-auth";
 
 const CloudflareAccount = z.object({
@@ -45,7 +46,7 @@ export class CFClient {
 
   fetch<TResponse>(
     options: FetchOptions<TResponse>
-  ): ResultAsync<TResponse, Error> {
+  ): ResultAsync<TResponse, unknown> {
     return this.formatHeaders(options.headers, options.body?.format === "json")
       .map((headers) => {
         const url = `https://api.cloudflare.com/client/v4${options.path}`;
@@ -59,12 +60,20 @@ export class CFClient {
         });
       })
       .map((res) => res.json())
-      .map((json) => CFResponse(options.responseSchema).parse(json))
-      .map((data) => {
-        if (!data.success) {
-          throw new Error(data.errors.map((e) => e.message).join("\n"));
+      .andThen((json) => {
+        const result = CFResponse(options.responseSchema).safeParse(json);
+        if (result.success) {
+          return ok(result.data);
+        } else {
+          return err(result.error);
         }
-        return data.result as TResponse;
+      })
+      .andThen((data) => {
+        if (data.success) {
+          return ok(data.result as TResponse);
+        } else {
+          return err(data.errors);
+        }
       });
   }
 
@@ -80,17 +89,19 @@ export class CFClient {
     if (this.account) {
       return okAsync(this.account);
     }
-    return this.fetch({
-      path: "/accounts",
-      method: "GET",
-      responseSchema: z.array(CloudflareAccount),
-    }).map((accounts) => {
-      if (!accounts[0]) {
-        throw new Error("No account found");
-      }
-      this.account = accounts[0];
-      return this.account;
-    });
+    return $store.fetch("cloudflare-account", () =>
+      this.fetch({
+        path: "/accounts",
+        method: "GET",
+        responseSchema: z.array(CloudflareAccount),
+      }).map((accounts) => {
+        if (!accounts[0]) {
+          throw new Error("No account found");
+        }
+        this.account = accounts[0];
+        return this.account;
+      })
+    );
   }
 
   private formatHeaders(

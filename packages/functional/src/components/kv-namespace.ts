@@ -1,7 +1,9 @@
-import { errAsync, okAsync, type ResultAsync } from "neverthrow";
+import { okAsync } from "neverthrow";
 import { z } from "zod";
-import { cfFetchAccount } from "../cloudflare/account";
-import { Component, type ComponentAction } from "../component";
+import { $cf } from "../app";
+import type { ResourceProvider } from "../resource";
+import { Component } from "../resource";
+import type { MakeOptional } from "../lib/utils";
 
 export const KVNamespaceState = z.object({
   id: z.string(),
@@ -15,71 +17,53 @@ const KVNamespaceProps = z.object({
   title: z.string(),
 });
 type KVNamespaceProps = z.infer<typeof KVNamespaceProps>;
-interface KVNamespacePropsInput {
-  title?: string;
-}
 
-export class KVNamespace extends Component<
-  "KVNamespace",
-  KVNamespaceState,
-  KVNamespaceProps,
-  KVNamespacePropsInput
-> {
-  readonly kind = "KVNamespace";
-
-  constructor(id: string, props: KVNamespacePropsInput = {}) {
-    super(id, props);
-  }
-
-  normalizeInput(id: string, props: KVNamespacePropsInput): KVNamespaceProps {
-    return KVNamespaceProps.parse({
-      title: props.title ?? id,
+export const provider = {
+  create: (props) => {
+    return $cf
+      .fetchWithAccount({
+        method: "POST",
+        path: "/storage/kv/namespaces",
+        body: {
+          format: "json",
+          data: props,
+        },
+        responseSchema: KVNamespaceState,
+      })
+      .map((state) => ({
+        id: state.id,
+        state,
+      }));
+  },
+  diff: (props, current) => {
+    return okAsync({
+      action: Bun.deepEquals(props, current.props) ? "noop" : "replace",
     });
-  }
-
-  async plan(phase: "up" | "down"): Promise<ComponentAction | null> {
-    switch (phase) {
-      case "up": {
-        if (!this.state) {
-          return "create";
-        }
-        if (this.state.input.title !== this.input.title) {
-          return "replace";
-        }
-        return null;
-      }
-      case "down": {
-        return this.state ? "delete" : null;
-      }
-    }
-  }
-
-  create(): ResultAsync<void, Error> {
-    return cfFetchAccount({
-      method: "POST",
-      path: "/accounts/:accountId/kv/namespaces",
-      body: this.input,
-      schema: KVNamespaceState,
-      headers: {
-        "Content-Type": "application/json",
-      },
-    }).andThen((state) => {
-      this.setState(state);
-      return okAsync();
+  },
+  read: (id) => {
+    return $cf.fetchWithAccount({
+      method: "GET",
+      path: `/storage/kv/namespaces/${id}`,
+      responseSchema: KVNamespaceState,
     });
-  }
-
-  delete(): ResultAsync<void, Error> {
-    if (!this.state) {
-      return errAsync(new Error("KVNamespace not found"));
-    }
-    return cfFetchAccount({
+  },
+  delete: ({ state }) => {
+    return $cf.fetchWithAccount({
       method: "DELETE",
-      path: `/accounts/:accountId/kv/namespaces/${this.state.output.id}`,
-      schema: z.any(),
-    }).andThen(() => {
-      this.setState(null);
-      return okAsync();
+      path: `/storage/kv/namespaces/${state.id}`,
+      responseSchema: z.any(),
     });
+  },
+} satisfies ResourceProvider<KVNamespaceProps, KVNamespaceState>;
+
+export class KVNamespace extends Component<KVNamespaceProps, KVNamespaceState> {
+  constructor(
+    name: string,
+    props: MakeOptional<KVNamespaceProps, "title"> = {}
+  ) {
+    super(provider, name, (id) => ({
+      title: props.title ?? id,
+      ...props,
+    }));
   }
 }

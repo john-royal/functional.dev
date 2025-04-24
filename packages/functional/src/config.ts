@@ -7,13 +7,6 @@ interface Config {
   setup: () => void | Promise<void>;
 }
 
-export const defineConfig = (config: Config): (() => Promise<App>) => {
-  return () =>
-    createApp(
-      {
-        name: config.name,
-        stage: config.environment ?? "dev",
-      },
-      config.setup
-    );
+export const defineConfig = (config: Config) => {
+  return config;
 };

@@ -1,8 +1,11 @@
-import { AsyncLocalStorage } from "unenv/node/async_hooks";
-import type { AnyComponent, ComponentAction } from "./component";
-import { Store } from "./store";
+import { ResultAsync } from "neverthrow";
+import assert from "node:assert";
+import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
 import { CFClient } from "./lib/cloudflare-client";
+import { groupIntoLayers } from "./lib/group";
+import { Store } from "./lib/store";
+import type { AnyComponent, ComponentAction } from "./resource";
 
 interface AppInput {
   name: string;
@@ -29,34 +32,49 @@ export class App {
     this.components.set(component.id, component);
   }
 
-  async plan(phase: "up" | "down") {
-    const plan = new Map<string, ComponentAction | null>();
-    await Promise.all(
-      this.components.values().map(async (component) => {
-        const action = await component.plan(phase);
-        plan.set(component.id, action);
-      })
-    );
-    for (const [id, action] of plan.entries()) {
-      if (!action) continue;
-      const component = this.components.get(id)!;
-      switch (action) {
-        case "create":
-          console.log(`Creating ${component.id}`);
-          await component.create();
-          console.log(`Created ${component.id}`);
-          break;
-        case "delete":
-          console.log(`Deleting ${component.id}`);
-          await component.delete();
-          console.log(`Deleted ${component.id}`);
-          break;
+  run(phase: "up" | "down") {
+    const plan = new Map<string, ComponentAction<unknown>>();
+    return ResultAsync.combineWithAllErrors(
+      Array.from(this.components.values()).map((component) =>
+        component.prepare(phase).map((action) => {
+          if (action) {
+            plan.set(component.id, action);
+          }
+        })
+      )
+    ).map(() => this.execute(plan));
+  }
+
+  async execute(plan: Map<string, ComponentAction<unknown>>) {
+    const layers = groupIntoLayers(plan);
+    for (const layer of layers) {
+      const res = await ResultAsync.combine(
+        layer.map((id) => {
+          const action = plan.get(id);
+          assert(action, `Action for ${id} not found`);
+          console.log(`running ${action.action} for ${id}`);
+          return action
+            .handler()
+            .map(() => {
+              console.log(`${action.action} for ${id} done`);
+            })
+            .mapErr((error) => {
+              console.error(`${action.action} for ${id} failed`, error);
+              return {
+                id,
+                error,
+              };
+            });
+        })
+      );
+      if (res.isErr()) {
+        throw res.error;
       }
     }
   }
 }
 
-const context = new AsyncLocalStorage<App>();
+export const context = new AsyncLocalStorage<App>();
 
 export const createApp = async <T>(input: AppInput, f: () => T) => {
   const app = new App(input);
@@ -66,20 +84,32 @@ export const createApp = async <T>(input: AppInput, f: () => T) => {
   return app;
 };
 
-export const useApp = () => {
-  const app = context.getStore();
-  if (!app) {
-    throw new Error("App not found");
-  }
-  return app;
-};
+export const $app = new Proxy({} as App, {
+  get(_, prop: keyof App) {
+    const app = context.getStore();
+    if (!app) {
+      throw new Error("App not found");
+    }
+    return app[prop];
+  },
+});
 
-export const useStore = () => {
-  const app = useApp();
-  return app.store;
-};
+export const $store = new Proxy({} as Store, {
+  get(_, prop: keyof Store) {
+    const value = $app.store[prop];
+    if (typeof value === "function") {
+      return value.bind($app.store);
+    }
+    return value;
+  },
+});
 
-export const useCF = () => {
-  const app = useApp();
-  return app.cf;
-};
+export const $cf = new Proxy({} as CFClient, {
+  get(_, prop: keyof CFClient) {
+    const value = $app.cf[prop];
+    if (typeof value === "function") {
+      return value.bind($app.cf);
+    }
+    return value;
+  },
+});

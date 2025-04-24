@@ -4,6 +4,7 @@ import xdgAppPaths from "xdg-app-paths";
 import { z } from "zod";
 import toml from "@iarna/toml";
 import { okAsync, Result, ResultAsync } from "neverthrow";
+import { SingleFlight } from "./single-flight";
 
 const config = {
   WRANGLER_DIR: xdgAppPaths(".wrangler").config(),
@@ -57,25 +58,28 @@ export class CloudflareAuth {
 }
 
 class WranglerConfigProvider {
-  _file?: Bun.BunFile;
-  _config?: WranglerConfig;
+  #file?: Bun.BunFile;
+  #config?: WranglerConfig;
+  #singleFlight = new SingleFlight<string, never>();
 
   get() {
-    return this.read
-      .andThen((config) => {
-        if (config.expiration_time.getTime() < Date.now() - 10 * 1000) {
-          return this.refresh(config.refresh_token).andThrough((newConfig) =>
-            this.write(newConfig)
-          );
-        }
-        return okAsync(config);
-      })
-      .map((config) => config.oauth_token);
+    return this.#singleFlight.run(() =>
+      this.read
+        .andThen((config) => {
+          if (config.expiration_time.getTime() < Date.now() - 10 * 1000) {
+            return this.refresh(config.refresh_token).andThrough((newConfig) =>
+              this.write(newConfig)
+            );
+          }
+          return okAsync(config);
+        })
+        .map((config) => config.oauth_token)
+    );
   }
 
   get file(): ResultAsync<Bun.BunFile, never> {
-    if (this._file) {
-      return okAsync(this._file);
+    if (this.#file) {
+      return okAsync(this.#file);
     }
     return ResultAsync.fromSafePromise(
       Bun.file(config.WRANGLER_DIR_LEGACY).exists()
@@ -90,8 +94,8 @@ class WranglerConfigProvider {
   }
 
   get read(): ResultAsync<WranglerConfig, never> {
-    if (this._config) {
-      return okAsync(this._config);
+    if (this.#config) {
+      return okAsync(this.#config);
     }
     return this.file
       .map((file) => file.text())
@@ -100,7 +104,7 @@ class WranglerConfigProvider {
   }
 
   write(config: WranglerConfig) {
-    this._config = config;
+    this.#config = config;
     return this.file.map((file) => file.write(toml.stringify(config)));
   }
 
@@ -117,7 +121,11 @@ class WranglerConfigProvider {
           client_id: config.CLIENT_ID,
         }).toString(),
       })
-    ).map(async (res) => OAuthTokens.parse(await res.json()));
+    ).map(async (res) => {
+      const json = await res.json();
+      console.log("json", json);
+      return OAuthTokens.parse(json);
+    });
   }
 }
 

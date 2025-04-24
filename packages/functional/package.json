@@ -13,7 +13,7 @@
     ".": "./src/config.ts"
   },
   "scripts": {
-    "build": "bun build ./src/cli/index.ts --compile --outfile ./dist/cli --bytecode --sourcemap",
+    "build": "bun build ./test-2.ts --compile --outfile ./dist/cli --bytecode --sourcemap",
     "dev": "bun run build --watch"
   },
   "repository": {
@@ -22,18 +22,14 @@
   },
   "dependencies": {
     "@cloudflare/unenv-preset": "^2.3.1",
-    "@effect/cli": "^0.59.11",
-    "@effect/platform": "^0.80.11",
-    "@effect/platform-node": "^0.76.21",
     "@iarna/toml": "^2.2.5",
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
-    "effect": "^3.14.11",
+    "ignore": "^7.0.3",
     "miniflare": "^4.20250410.1",
     "neverthrow": "^8.2.0",
     "open": "^10.1.1",
     "unenv": "^2.0.0-rc.15",
-    "valibot": "^1.0.0",
     "xdg-app-paths": "^8.3.0",
     "zod": "^3.24.3"
   },
