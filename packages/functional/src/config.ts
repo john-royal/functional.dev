@@ -1,6 +1,6 @@
 import type { Result } from "neverthrow";
 import { err, ok } from "neverthrow";
-import { CyclicDependencyError, groupIntoLayers } from "./lib/group";
+import { CyclicDependencyError, groupIntoLayers } from "./config/group";
 
 export interface Context {}
 
@@ -47,6 +47,21 @@ class DependencyResolutionError extends Error {
   }
 }
 
+class ResourceReference {
+  constructor(
+    readonly name: string,
+    readonly type: string
+  ) {}
+
+  toJSON = () => ({
+    type: "resource-reference",
+    resource: {
+      name: this.name,
+      type: this.type,
+    },
+  });
+}
+
 export function defineConfig<T extends Record<string, AnyResource>>(
   config: Config<T>
 ): Result<
@@ -57,13 +72,47 @@ export function defineConfig<T extends Record<string, AnyResource>>(
   },
   DependencyResolutionError | CyclicDependencyError
 > {
+  function resolveDependencies<T extends Record<string, AnyResource>>(
+    key: string,
+    factory: (ctx: Context) => T[keyof T]
+  ): Result<
+    T[keyof T] & { dependencies?: string[] },
+    DependencyResolutionError
+  > {
+    const dependencies = new Set<string>();
+    const context = new Proxy({} as unknown as Context, {
+      get({}, prop: string) {
+        if (prop in config.resources && !!config.resources[prop]) {
+          dependencies.add(prop);
+          const resource = config.resources[prop];
+          const type =
+            typeof resource === "function"
+              ? resource(context).type
+              : resource.type;
+          return new ResourceReference(prop, type);
+        } else {
+          throw new DependencyResolutionError(prop, key);
+        }
+      },
+    });
+    try {
+      const resolvedValue = factory(context);
+      return ok({
+        ...resolvedValue,
+        dependencies: Array.from(dependencies),
+      });
+    } catch (error) {
+      return err(error as DependencyResolutionError);
+    }
+  }
+
   const resources = new Map<
     string,
     AnyResource & { dependencies?: string[] }
   >();
   for (const [key, value] of Object.entries(config.resources)) {
     if (typeof value === "function") {
-      const result = resolveDependencies(config.resources, key, value);
+      const result = resolveDependencies(key, value);
       if (result.isErr()) {
         return err(result.error);
       }
@@ -74,51 +123,15 @@ export function defineConfig<T extends Record<string, AnyResource>>(
       });
     }
   }
+
   const layers = groupIntoLayers(resources);
   if (layers.isErr()) {
     return err(layers.error);
   }
+
   return ok({
     config,
     resources,
     layers: layers.value,
   });
-}
-
-function resolveDependencies<T extends Record<string, AnyResource>>(
-  resources: ResourceMap<T>,
-  key: string,
-  factory: (ctx: Context) => T[keyof T]
-): Result<T[keyof T] & { dependencies?: string[] }, DependencyResolutionError> {
-  const dependencies = new Set<string>();
-  const context = new Proxy({} as unknown as Context, {
-    get({}, prop: string) {
-      if (prop in resources && !!resources[prop]) {
-        dependencies.add(prop);
-        const resource = resources[prop];
-        const type =
-          typeof resource === "function"
-            ? resource(context).type
-            : resource.type;
-        return {
-          type: "resolved-resource",
-          resource: {
-            name: prop,
-            type,
-          },
-        };
-      } else {
-        throw new DependencyResolutionError(prop, key);
-      }
-    },
-  });
-  try {
-    const resolvedValue = factory(context);
-    return ok({
-      ...resolvedValue,
-      dependencies: Array.from(dependencies),
-    });
-  } catch (error) {
-    return err(error as DependencyResolutionError);
-  }
 }

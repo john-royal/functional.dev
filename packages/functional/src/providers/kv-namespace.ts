@@ -2,9 +2,14 @@ import type { ResultAsync } from "neverthrow";
 import { okAsync } from "neverthrow";
 import { z } from "zod";
 import type { CFClient } from "../cloudflare/client";
-import { validate } from "../lib/validate";
-import type { ResourceProvider } from "./provider";
 import type { CFError } from "../cloudflare/error";
+import { validate } from "../lib/validate";
+import {
+  ResourceComponent,
+  type ResourceDiff,
+  type ResourceProvider,
+} from "./provider";
+import type { Scope } from "../scope";
 
 export const KVNamespaceInput = z.object({
   title: z.string(),
@@ -48,10 +53,8 @@ export class KVNamespaceProvider
   diff(
     state: KVNamespaceState,
     input: KVNamespaceInput
-  ): ResultAsync<{ action: "noop" | "replace" | "update" }, never> {
-    return okAsync({
-      action: Bun.deepEquals(state.input, input) ? "noop" : "replace",
-    });
+  ): ResultAsync<ResourceDiff, CFError> {
+    return okAsync(Bun.deepEquals(state.input, input) ? "noop" : "replace");
   }
 
   delete(state: KVNamespaceState) {
@@ -62,5 +65,15 @@ export class KVNamespaceProvider
         responseSchema: z.unknown(),
       })
       .map(() => undefined);
+  }
+}
+
+export class KVNamespace extends ResourceComponent<
+  KVNamespaceInput,
+  KVNamespaceOutput,
+  CFError
+> {
+  constructor(scope: Scope, name: string, input: KVNamespaceInput) {
+    super(scope, new KVNamespaceProvider(scope.client), name, input);
   }
 }

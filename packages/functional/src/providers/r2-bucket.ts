@@ -1,10 +1,14 @@
 import { okAsync, ResultAsync } from "neverthrow";
 import { z } from "zod";
 import type { CFClient } from "../cloudflare/client";
-import { validate } from "../lib/validate";
 import type { CFError } from "../cloudflare/error";
-import type { ResourceProvider } from "./provider";
-
+import { validate } from "../lib/validate";
+import type { Scope } from "../scope";
+import {
+  ResourceComponent,
+  type ResourceDiff,
+  type ResourceProvider,
+} from "./provider";
 const R2BucketStorageClass = z.enum(["Standard", "InfrequentAccess"]);
 const R2BucketJurisdiction = z.enum(["default", "eu", "fedramp"]);
 const R2BucketLocation = z.enum(["APAC", "EEUR", "ENAM", "WEUR", "WNAM", "OC"]);
@@ -65,10 +69,8 @@ export class R2BucketProvider
   diff(
     state: R2BucketState,
     input: R2BucketInput
-  ): ResultAsync<{ action: "noop" | "replace" | "update" }, never> {
-    return okAsync({
-      action: Bun.deepEquals(state.input, input) ? "noop" : "replace",
-    });
+  ): ResultAsync<ResourceDiff, CFError> {
+    return okAsync(Bun.deepEquals(state.input, input) ? "noop" : "replace");
   }
 
   delete(state: R2BucketState): ResultAsync<void, CFError> {
@@ -79,5 +81,15 @@ export class R2BucketProvider
         responseSchema: z.unknown(),
       })
       .map(() => undefined);
+  }
+}
+
+export class R2Bucket extends ResourceComponent<
+  R2BucketInput,
+  R2BucketOutput,
+  CFError
+> {
+  constructor(scope: Scope, name: string, input: R2BucketInput) {
+    super(scope, new R2BucketProvider(scope.client), name, input);
   }
 }

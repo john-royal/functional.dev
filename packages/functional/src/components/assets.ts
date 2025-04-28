@@ -1,15 +1,19 @@
+import ignore from "ignore";
 import { okAsync, ResultAsync } from "neverthrow";
 import { createHash } from "node:crypto";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import ignore from "ignore";
-import type { ResourceProvider } from "../providers/provider";
+import {
+  ResourceComponent,
+  type ResourceProvider,
+} from "../providers/provider";
+import type { Scope } from "../scope";
 
-interface AssetProps {
+export interface AssetInput {
   path: string;
 }
 
-interface AssetState {
+export interface AssetOutput {
   manifest: Record<string, FileState>;
 }
 
@@ -24,21 +28,21 @@ export const provider = {
   },
   diff: (state, input) => {
     if (input.path !== state.input.path) {
-      return okAsync({
-        action: "replace",
-      });
+      return okAsync("replace");
     }
-    return ResultAsync.fromSafePromise(readAssets(input.path)).map(
-      (output) => ({
-        action: Bun.deepEquals(output.manifest, state.output.manifest)
-          ? "noop"
-          : "update",
-      })
+    return ResultAsync.fromSafePromise(readAssets(input.path)).map((output) =>
+      Bun.deepEquals(output.manifest, state.output.manifest) ? "noop" : "update"
     );
   },
-} satisfies ResourceProvider<AssetProps, AssetState, never>;
+} satisfies ResourceProvider<AssetInput, AssetOutput, never>;
 
-const readAssets = async (path: string): Promise<AssetState> => {
+export class Assets extends ResourceComponent<AssetInput, AssetOutput, never> {
+  constructor(scope: Scope, name: string, input: AssetInput) {
+    super(scope, provider, name, input);
+  }
+}
+
+const readAssets = async (path: string): Promise<AssetOutput> => {
   const files = await readdir(path, { recursive: true });
 
   const ingoreMatcher = ignore().add([

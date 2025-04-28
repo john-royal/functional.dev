@@ -1,6 +1,10 @@
 import { err, okAsync, ResultAsync } from "neverthrow";
 import { rm } from "node:fs/promises";
-import type { ResourceProvider } from "../providers/provider";
+import {
+  ResourceComponent,
+  type ResourceProvider,
+} from "../providers/provider";
+import type { Scope } from "../scope";
 
 export interface BuildProps {
   path: string;
@@ -21,6 +25,7 @@ interface BuildManifest {
 export interface BuildState {
   entry: BuildFile;
   files: BuildFile[];
+  format: "esm" | "cjs";
   manifest: BuildManifest;
 }
 
@@ -35,13 +40,11 @@ export const provider = {
   // }),
   diff: (state, input) => {
     if (!Bun.deepEquals(input, state.input)) {
-      return okAsync({
-        action: "replace",
-      });
+      return okAsync("replace");
     }
-    return hasChanged(state.output.manifest).map((changed) => ({
-      action: changed ? "update" : "noop",
-    }));
+    return hasChanged(state.output.manifest).map((changed) =>
+      changed ? "update" : "noop"
+    );
   },
   update: (_, props) => {
     return build(props);
@@ -50,6 +53,16 @@ export const provider = {
     return ResultAsync.fromSafePromise(rm(input.outdir, { recursive: true }));
   },
 } satisfies ResourceProvider<BuildProps, BuildState, BuildError>;
+
+export class Build extends ResourceComponent<
+  BuildProps,
+  BuildState,
+  BuildError
+> {
+  constructor(scope: Scope, name: string, input: BuildProps) {
+    super(scope, provider, name, input);
+  }
+}
 
 class TraceInputPlugin implements Bun.BunPlugin {
   readonly name = "trace-input";
@@ -80,7 +93,7 @@ class TraceInputPlugin implements Bun.BunPlugin {
   };
 }
 
-class BuildError extends Error {
+export class BuildError extends Error {
   readonly errors?: (BuildMessage | ResolveMessage)[];
   constructor(
     message: string,
@@ -121,6 +134,7 @@ const build = (props: BuildProps) => {
     return ResultAsync.fromSafePromise(traceInputPlugin.getManifest()).map(
       (manifest) => ({
         entry: BuildFile.fromArtifact(entry),
+        format: props.format,
         files: result.outputs
           .filter((o) => o.kind !== "entry-point")
           .map((o) => BuildFile.fromArtifact(o)),
