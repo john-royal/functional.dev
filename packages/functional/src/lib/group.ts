@@ -1,6 +1,14 @@
+import { err, ok, Result } from "neverthrow";
+
+export class CyclicDependencyError extends Error {
+  constructor(readonly dependencies: string[]) {
+    super(`Cyclic dependency detected: ${dependencies.join(", ")}`);
+  }
+}
+
 export function groupIntoLayers(
   items: Map<string, { dependencies?: string[] }>
-): string[][] {
+): Result<string[][], CyclicDependencyError> {
   const inDegree = new Map<string, number>();
   const graph = new Map<string, string[]>();
 
@@ -35,10 +43,10 @@ export function groupIntoLayers(
 
   const check = filterInDegree(inDegree, (degree) => degree !== 0);
   if (check.length > 0) {
-    throw new Error(`Cyclic dependency detected: ${check.join(", ")}`);
+    return err(new CyclicDependencyError(check));
   }
 
-  return layers;
+  return ok(layers);
 }
 
 function filterInDegree(
@@ -56,13 +64,3 @@ function filterInDegree(
   }
   return result;
 }
-
-// const test = groupIntoLayers(
-//   new Map([
-//     ["worker-1", { dependencies: ["kv", "r2"] }],
-//     ["worker-2", { dependencies: ["worker-1"] }],
-//     ["kv", { dependencies: [] }],
-//     ["r2", { dependencies: [] }],
-//   ])
-// );
-// console.log(test);

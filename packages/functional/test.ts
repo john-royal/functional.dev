@@ -3,7 +3,7 @@ import { defineConfig } from "./src/config";
 declare module "./src/config" {
   interface Context {
     bucket: R2Resource;
-    kv: KVResource;
+    kv: KVNamespaceResource;
     worker1: WorkerResource;
     worker2: WorkerResource;
   }
@@ -13,7 +13,6 @@ export default defineConfig({
   name: "test",
   resources: {
     bucket: { type: "r2" },
-
     kv: { type: "kv" },
 
     worker1: (ctx) => ({
@@ -33,4 +32,11 @@ export default defineConfig({
       },
     }),
   },
-});
+})
+  .andTee((res) => {
+    console.dir(res, { depth: null });
+  })
+  .mapErr((err) => {
+    console.error(err);
+    return err;
+  });

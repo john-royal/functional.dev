@@ -2,8 +2,8 @@ import { okAsync, ResultAsync } from "neverthrow";
 import { createHash } from "node:crypto";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { ResourceProvider } from "../resource";
 import ignore from "ignore";
+import type { ResourceProvider } from "../providers/provider";
 
 interface AssetProps {
   path: string;
@@ -19,30 +19,24 @@ interface FileState {
 }
 
 export const provider = {
-  create: (props) => {
-    return ResultAsync.fromSafePromise(readAssets(props.path)).map((state) => ({
-      id: props.path,
-      state,
-    }));
+  create: (input) => {
+    return ResultAsync.fromSafePromise(readAssets(input.path));
   },
-  diff: (props, current) => {
-    if (props.path !== current.props.path) {
+  diff: (state, input) => {
+    if (input.path !== state.input.path) {
       return okAsync({
         action: "replace",
       });
     }
-    return ResultAsync.fromSafePromise(readAssets(props.path)).map((dir) => {
-      return {
-        action: Bun.deepEquals(current.state.manifest, dir.manifest)
+    return ResultAsync.fromSafePromise(readAssets(input.path)).map(
+      (output) => ({
+        action: Bun.deepEquals(output.manifest, state.output.manifest)
           ? "noop"
-          : "replace",
-      };
-    });
+          : "update",
+      })
+    );
   },
-  delete: () => {
-    return okAsync();
-  },
-} satisfies ResourceProvider<AssetProps, AssetState>;
+} satisfies ResourceProvider<AssetProps, AssetState, never>;
 
 const readAssets = async (path: string): Promise<AssetState> => {
   const files = await readdir(path, { recursive: true });

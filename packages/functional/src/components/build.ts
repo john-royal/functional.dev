@@ -1,9 +1,6 @@
 import { err, okAsync, ResultAsync } from "neverthrow";
 import { rm } from "node:fs/promises";
-import { InternalError } from "../lib/error";
-import type { MaybeArray } from "../lib/utils";
-import type { ResourceProvider } from "../resource";
-import { Component } from "../resource";
+import type { ResourceProvider } from "../providers/provider";
 
 export interface BuildProps {
   path: string;
@@ -27,43 +24,32 @@ export interface BuildState {
   manifest: BuildManifest;
 }
 
-type BuildError = MaybeArray<InternalError | BuildMessage | ResolveMessage>;
-
 export const provider = {
   create: (props) => {
-    return build(props).map((state) => ({
-      id: "abc",
-      state,
-    }));
+    return build(props);
   },
-  hydrate: (state) => ({
-    entry: BuildFile.fromJSON(state.entry),
-    files: state.files.map(BuildFile.fromJSON),
-    manifest: state.manifest,
-  }),
-  diff: (props, current) => {
-    if (!Bun.deepEquals(props, current.props)) {
+  // hydrate: (state: BuildState) => ({
+  //   entry: BuildFile.fromJSON(state.entry),
+  //   files: state.files.map(BuildFile.fromJSON),
+  //   manifest: state.manifest,
+  // }),
+  diff: (state, input) => {
+    if (!Bun.deepEquals(input, state.input)) {
       return okAsync({
         action: "replace",
       });
     }
-    return hasChanged(current.state.manifest).map((changed) => ({
+    return hasChanged(state.output.manifest).map((changed) => ({
       action: changed ? "update" : "noop",
     }));
   },
-  update: (state, props) => {
+  update: (_, props) => {
     return build(props);
   },
-  delete: ({ props }) => {
-    return ResultAsync.fromSafePromise(rm(props.outdir, { recursive: true }));
+  delete: ({ input }) => {
+    return ResultAsync.fromSafePromise(rm(input.outdir, { recursive: true }));
   },
 } satisfies ResourceProvider<BuildProps, BuildState, BuildError>;
-
-export class Build extends Component<BuildProps, BuildState, BuildError> {
-  constructor(name: string, props: BuildProps) {
-    super(provider, name, props);
-  }
-}
 
 class TraceInputPlugin implements Bun.BunPlugin {
   readonly name = "trace-input";
@@ -94,6 +80,17 @@ class TraceInputPlugin implements Bun.BunPlugin {
   };
 }
 
+class BuildError extends Error {
+  readonly errors?: (BuildMessage | ResolveMessage)[];
+  constructor(
+    message: string,
+    options?: ErrorOptions & { errors?: (BuildMessage | ResolveMessage)[] }
+  ) {
+    super(message, options);
+    this.errors = options?.errors;
+  }
+}
+
 const build = (props: BuildProps) => {
   const traceInputPlugin = new TraceInputPlugin();
   return ResultAsync.fromPromise(
@@ -108,18 +105,18 @@ const build = (props: BuildProps) => {
     }),
     (error) => {
       if (error instanceof AggregateError) {
-        return error.errors.map((error) =>
-          error instanceof BuildMessage || error instanceof ResolveMessage
-            ? error
-            : InternalError.fromUnknown(error)
-        );
+        return new BuildError(error.message, {
+          errors: error.errors,
+        });
       }
-      return InternalError.fromUnknown(error);
+      return new BuildError("An unexpected error occurred", {
+        cause: error,
+      });
     }
   ).andThen((result) => {
     const entry = result.outputs.find((o) => o.kind === "entry-point");
     if (!entry) {
-      return err(new InternalError("No entry point found"));
+      return err(new BuildError("No entry point found"));
     }
     return ResultAsync.fromSafePromise(traceInputPlugin.getManifest()).map(
       (manifest) => ({
@@ -139,7 +136,7 @@ const hasChanged = (manifest: BuildManifest) => {
       let isResolved = false;
       Promise.all(
         Object.entries(manifest).map(([path, metadata]) =>
-          hasFileChangedPromise(path, metadata).then((changed) => {
+          hasFileChanged(path, metadata).then((changed) => {
             if (changed && !isResolved) {
               isResolved = true;
               console.log("changed", path);
@@ -156,24 +153,17 @@ const hasChanged = (manifest: BuildManifest) => {
     })
   );
 };
-const hasFileChangedPromise = (
+const hasFileChanged = async (
   path: string,
   metadata: { size: number; mtime: number }
 ): Promise<boolean> => {
-  return hasFileChanged(path, metadata).unwrapOr(true);
-};
-
-const hasFileChanged = (
-  path: string,
-  metadata: { size: number; mtime: number }
-): ResultAsync<boolean, never> => {
   const file = Bun.file(path);
-  return ResultAsync.fromSafePromise(file.stat()).map((stat) => {
-    if (stat.mtimeMs !== metadata.mtime) {
-      console.log("changed", path, stat.mtimeMs, metadata.mtime);
-    }
+  try {
+    const stat = await file.stat();
     return stat.mtimeMs !== metadata.mtime;
-  });
+  } catch {
+    return true;
+  }
 };
 
 type BuildFileKind =
