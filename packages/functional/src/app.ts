@@ -34,6 +34,7 @@ export class App {
 
   run(phase: "up" | "down") {
     const plan = new Map<string, ComponentAction<unknown>>();
+    console.time("prepare");
     return ResultAsync.combineWithAllErrors(
       Array.from(this.components.values()).map((component) =>
         component.prepare(phase).map((action) => {
@@ -42,7 +43,16 @@ export class App {
           }
         })
       )
-    ).map(() => this.execute(plan));
+    )
+      .map(() => {
+        console.timeEnd("prepare");
+        console.time("execute");
+        return this.execute(plan);
+      })
+      .map((result) => {
+        console.timeEnd("execute");
+        return result;
+      });
   }
 
   async execute(plan: Map<string, ComponentAction<unknown>>) {

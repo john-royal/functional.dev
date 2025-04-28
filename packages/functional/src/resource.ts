@@ -29,6 +29,8 @@ export class Component<TProps extends object, TState, TError = Error> {
   readonly id: string;
   readonly props: TProps;
 
+  private statePromise = new DetachedPromise<TState>();
+
   constructor(
     readonly provider: ResourceProvider<TProps, TState, TError>,
     readonly name: string,
@@ -39,15 +41,42 @@ export class Component<TProps extends object, TState, TError = Error> {
     $app.register(this);
   }
 
-  prepare(
-    phase: "up" | "down"
-  ): ResultAsync<ComponentAction<TError> | null, TError | InternalError> {
-    const key = `state:${this.id}`;
+  private get stateKey() {
+    return `state:${this.id}`;
+  }
+
+  private getState() {
     const current = $store.get<{
       id: string;
       props: TProps;
       state: TState;
-    }>(key);
+    }>(this.stateKey);
+    if (current && this.provider.hydrate) {
+      current.state = this.provider.hydrate(current.state);
+    }
+    return current;
+  }
+
+  private async clearState() {
+    await $store.delete(this.stateKey);
+  }
+
+  private async setState(state: TState) {
+    await $store.set(this.stateKey, {
+      id: this.id,
+      props: this.props,
+      state,
+    });
+  }
+
+  prepare(
+    phase: "up" | "down"
+  ): ResultAsync<ComponentAction<TError> | null, TError | InternalError> {
+    if (this.statePromise.status !== "pending") {
+      this.statePromise = new DetachedPromise<TState>();
+    }
+
+    const current = this.getState();
 
     switch (phase) {
       case "up": {
@@ -55,13 +84,9 @@ export class Component<TProps extends object, TState, TError = Error> {
           return okAsync({
             action: "create",
             handler: () =>
-              this.provider.create(this.props).map((result) =>
-                $store.set(key, {
-                  id: result.id,
-                  props: this.props,
-                  state: result.state,
-                })
-              ),
+              this.provider
+                .create(this.props)
+                .map((result) => this.setState(result.state)),
           });
         }
         return this.provider
@@ -77,11 +102,7 @@ export class Component<TProps extends object, TState, TError = Error> {
                   action: "update",
                   handler: () =>
                     update(current.state, this.props).map((state) =>
-                      $store.set(key, {
-                        id: current.id,
-                        props: this.props,
-                        state,
-                      })
+                      this.setState(state)
                     ),
                 } satisfies ComponentAction<TError>);
               }
@@ -91,15 +112,11 @@ export class Component<TProps extends object, TState, TError = Error> {
                   handler: () =>
                     this.provider
                       .delete(current)
-                      .map(() => $store.delete(key))
+                      .map(() => this.clearState())
                       .andThen(() =>
-                        this.provider.create(this.props).map((result) =>
-                          $store.set(key, {
-                            id: result.id,
-                            props: this.props,
-                            state: result.state,
-                          })
-                        )
+                        this.provider
+                          .create(this.props)
+                          .map((result) => this.setState(result.state))
                       ),
                 } satisfies ComponentAction<TError>);
               }
@@ -116,9 +133,33 @@ export class Component<TProps extends object, TState, TError = Error> {
         return okAsync({
           action: "delete",
           handler: () =>
-            this.provider.delete(current).map(() => $store.delete(key)),
+            this.provider.delete(current).map(() => this.clearState()),
         });
       }
     }
+  }
+
+  get state() {
+    return this.statePromise.promise;
+  }
+}
+
+class DetachedPromise<T> {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+  readonly reject: (reason?: unknown) => void;
+  status: "pending" | "fulfilled" | "rejected" = "pending";
+
+  constructor() {
+    const { promise, resolve, reject } = Promise.withResolvers<T>();
+    this.promise = promise;
+    this.resolve = (value) => {
+      this.status = "fulfilled";
+      resolve(value);
+    };
+    this.reject = (reason) => {
+      this.status = "rejected";
+      reject(reason);
+    };
   }
 }

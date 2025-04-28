@@ -31,7 +31,6 @@ export class Store {
 
   set(key: string, value: unknown): Promise<void> {
     this.map.set(key, value);
-    console.log("set", key, value);
     return this.save();
   }
 

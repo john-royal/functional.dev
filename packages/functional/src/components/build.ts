@@ -1,9 +1,8 @@
-import { err, ok, okAsync, ResultAsync } from "neverthrow";
-import { createHash } from "node:crypto";
+import { err, okAsync, ResultAsync } from "neverthrow";
 import { rm } from "node:fs/promises";
 import { InternalError } from "../lib/error";
+import type { MaybeArray } from "../lib/utils";
 import type { ResourceProvider } from "../resource";
-import type { MakeOptional, MaybeArray } from "../lib/utils";
 import { Component } from "../resource";
 
 export interface BuildProps {
@@ -53,10 +52,7 @@ export const provider = {
     }));
   },
   update: (state, props) => {
-    return build(props).map((newState) => ({
-      ...state,
-      state: newState,
-    }));
+    return build(props);
   },
   delete: ({ props }) => {
     return ResultAsync.fromSafePromise(rm(props.outdir, { recursive: true }));
@@ -146,6 +142,7 @@ const hasChanged = (manifest: BuildManifest) => {
           hasFileChangedPromise(path, metadata).then((changed) => {
             if (changed && !isResolved) {
               isResolved = true;
+              console.log("changed", path);
               resolve(true);
             }
           })
@@ -171,9 +168,12 @@ const hasFileChanged = (
   metadata: { size: number; mtime: number }
 ): ResultAsync<boolean, never> => {
   const file = Bun.file(path);
-  return ResultAsync.fromSafePromise(file.stat()).map(
-    (stat) => stat.mtimeMs !== metadata.mtime
-  );
+  return ResultAsync.fromSafePromise(file.stat()).map((stat) => {
+    if (stat.mtimeMs !== metadata.mtime) {
+      console.log("changed", path, stat.mtimeMs, metadata.mtime);
+    }
+    return stat.mtimeMs !== metadata.mtime;
+  });
 };
 
 type BuildFileKind =
