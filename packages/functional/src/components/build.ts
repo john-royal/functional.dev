@@ -1,4 +1,4 @@
-import { err, okAsync, ResultAsync } from "neverthrow";
+import { err, ok, okAsync, ResultAsync } from "neverthrow";
 import { rm } from "node:fs/promises";
 import {
   ResourceComponent,
@@ -33,11 +33,17 @@ export const provider = {
   create: (props) => {
     return build(props);
   },
-  // hydrate: (state: BuildState) => ({
-  //   entry: BuildFile.fromJSON(state.entry),
-  //   files: state.files.map(BuildFile.fromJSON),
-  //   manifest: state.manifest,
-  // }),
+  hydrate: (state) => {
+    return {
+      input: state.input,
+      output: {
+        entry: BuildFile.fromJSON(state.output.entry),
+        files: state.output.files.map(BuildFile.fromJSON),
+        manifest: state.output.manifest,
+        format: state.input.format,
+      },
+    };
+  },
   diff: (state, input) => {
     if (!Bun.deepEquals(input, state.input)) {
       return okAsync("replace");
@@ -59,8 +65,13 @@ export class Build extends ResourceComponent<
   BuildState,
   BuildError
 > {
-  constructor(scope: Scope, name: string, input: BuildProps) {
-    super(scope, provider, name, input);
+  constructor(
+    scope: Scope,
+    name: string,
+    input: BuildProps,
+    metadata?: { dependsOn?: string[] }
+  ) {
+    super(scope, provider, name, input, metadata);
   }
 }
 

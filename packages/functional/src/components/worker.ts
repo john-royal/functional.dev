@@ -4,6 +4,8 @@ import z from "zod";
 import type { CFClient } from "../cloudflare/client";
 import type { CFError } from "../cloudflare/error";
 import type {
+  Component,
+  ResourceAction,
   ResourceDiff,
   ResourceProvider,
   ResourceState,
@@ -13,6 +15,7 @@ import { type AssetInput } from "./assets";
 import { Build, BuildError } from "./build";
 import { WorkerAssets } from "./worker-assets";
 import { WorkerURL } from "./worker-dev-url";
+import { join } from "node:path";
 
 export interface WorkerRawInput {
   path: string;
@@ -136,7 +139,7 @@ const WorkerOutput = z.object({
   modified_on: z.string().optional(),
   placement: SmartPlacement.optional(),
   startup_time_ms: z.number().optional(),
-  tail_consumers: z.array(ConsumerScript).optional(),
+  tail_consumers: z.array(ConsumerScript).nullable(),
   usage_model: z.literal("standard").optional(),
 });
 type WorkerOutput = z.infer<typeof WorkerOutput>;
@@ -165,6 +168,7 @@ class WorkerScriptProvider
   }
 
   private putScript(input: WorkerInput): ResultAsync<WorkerOutput, CFError> {
+    console.log("putScript", JSON.stringify(input, null, 2));
     const formData = new FormData();
     formData.append(
       "metadata",
@@ -198,7 +202,7 @@ class WorkerScriptProvider
   }
 }
 
-export class Worker {
+export class Worker implements Component<Error> {
   build: Build;
   assets?: WorkerAssets;
   url?: WorkerURL;
@@ -209,35 +213,52 @@ export class Worker {
     readonly name: string,
     readonly input: WorkerRawInput
   ) {
-    this.build = new Build(scope.extend(name), "bundle", {
+    this.build = new Build(scope.extend(`${name}:bundle`), `${name}:bundle`, {
       path: input.path,
       format: "esm",
-      outdir: "dist",
-      target: "node",
+      outdir: join(scope.app.path, "dist"),
+      target: "browser",
       minify: true,
       sourcemap: "external",
     });
     this.assets = input.assets
-      ? new WorkerAssets(scope.extend(name), "assets", {
+      ? new WorkerAssets(scope.extend(`${name}:assets`), `${name}:assets`, {
           scriptName: this.name,
           path: input.assets.path,
         })
       : undefined;
     this.url = input.url
-      ? new WorkerURL(scope.extend(name), "url", {
-          scriptName: this.name,
-          enabled: true,
-        })
+      ? new WorkerURL(
+          scope.extend(`${name}:url`),
+          `${name}:url`,
+          {
+            scriptName: this.name,
+            enabled: true,
+          },
+          {
+            dependsOn: [this.name],
+          }
+        )
       : undefined;
+
     this.provider = new WorkerScriptProvider(scope.client);
+
+    this.scope.register(this, {
+      dependsOn: [this.build.name, this.assets?.name].filter(
+        (name) => name !== undefined
+      ),
+    });
   }
 
-  prepare(phase: "up" | "down") {
+  prepare = (
+    phase: "up" | "down"
+  ): ResultAsync<ResourceAction<Error> | null, Error> => {
     if (phase === "down") {
       const state = this.scope.getState<WorkerInput, WorkerOutput>();
       if (!state) {
         return okAsync(null);
       }
+      console.log("delete");
       return okAsync({
         action: "delete",
         handler: () => this.delete(state),
@@ -249,19 +270,19 @@ export class Worker {
     ]).andThen(([buildAction, assetsAction]) => {
       const state = this.scope.getState<WorkerInput, WorkerOutput>();
       if (!state) {
-        return okAsync({
+        return okAsync<ResourceAction<Error>>({
           action: "create",
           handler: () => this.getWorkerInput().andThen(this.create),
         });
       }
       if (buildAction || assetsAction) {
-        return okAsync({
+        return okAsync<ResourceAction<Error>>({
           action: "update",
           handler: () => {
             return this.getWorkerInput().andThen((input) =>
               this.provider.diff(state, input).andThen((diff) => {
                 if (diff === "noop") {
-                  return ok(null);
+                  return ok();
                 }
                 return this.update(state, input);
               })
@@ -277,40 +298,48 @@ export class Worker {
           return {
             action: "update",
             handler: () => this.update(state, input),
-          };
+          } satisfies ResourceAction<Error>;
         })
       );
     });
-  }
+  };
 
-  private create(input: WorkerInput) {
+  private create = (input: WorkerInput) => {
     return this.provider
       .create(input)
-      .andTee((output) => this.scope.setState({ input, output }));
-  }
+      .map((output) => this.scope.setState({ input, output }));
+  };
 
-  private update(
+  private update = (
     state: ResourceState<WorkerInput, WorkerOutput>,
     input: WorkerInput
-  ) {
+  ) => {
     return this.provider
       .update(state, input)
-      .andTee((output) => this.scope.setState({ input, output }));
-  }
+      .map((output) => this.scope.setState({ input, output }));
+  };
 
-  private delete(state: ResourceState<WorkerInput, WorkerOutput>) {
-    return this.provider.delete(state).andTee(() => this.scope.deleteState());
-  }
+  private delete = (state: ResourceState<WorkerInput, WorkerOutput>) => {
+    return this.provider.delete(state).map(() => this.scope.deleteState());
+  };
 
-  private getWorkerInput(): ResultAsync<WorkerInput, BuildError> {
+  private getWorkerInput = (): ResultAsync<WorkerInput, BuildError> => {
+    console.log("getWorkerInput");
     return ResultAsync.combine([
       this.build.output.map(async (output) => {
+        assert(output, new Error(`No output for ${this.name}`));
         return {
-          main_module: output.format === "esm" ? output.entry.path : undefined,
-          body_part: output.format === "cjs" ? output.entry.path : undefined,
+          main_module:
+            output.format === "esm"
+              ? output.entry.path.replace(`${this.scope.app.path}/dist/`, "")
+              : undefined,
+          body_part:
+            output.format === "cjs"
+              ? output.entry.path.replace(`${this.scope.app.path}/dist/`, "")
+              : undefined,
           files: await Promise.all(
             [output.entry, ...output.files].map(async (file) => ({
-              name: file.path,
+              name: file.path.replace(`${this.scope.app.path}/dist/`, ""),
               content: await file.text(),
               // TODO: support other types
               type:
@@ -359,5 +388,5 @@ export class Worker {
         files: buildOutput.files,
       });
     });
-  }
+  };
 }

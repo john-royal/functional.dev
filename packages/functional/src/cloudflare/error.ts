@@ -20,8 +20,9 @@ interface CFErrorOptions<Code extends CFErrorCode> {
 export class CFError<Code extends CFErrorCode = CFErrorCode> extends Error {
   readonly code: Code;
 
-  constructor({ code, message, cause }: CFErrorOptions<Code>) {
+  constructor({ code, message, cause, metadata }: CFErrorOptions<Code>) {
     super(message ?? code, { cause });
+    console.log("CFError", code, message, cause, metadata);
     this.code = code;
   }
 }

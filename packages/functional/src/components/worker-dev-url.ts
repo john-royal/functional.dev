@@ -61,7 +61,10 @@ export class WorkerURLProvider
           ? { enabled: true, previews_enabled: true }
           : { enabled: false },
       },
-      responseSchema: WorkerURLOutput,
+      responseSchema: WorkerURLOutput.catch({
+        enabled: input.enabled,
+        previews_enabled: input.enabled,
+      }),
     });
   }
 }
@@ -71,7 +74,12 @@ export class WorkerURL extends ResourceComponent<
   WorkerURLOutput,
   CFError
 > {
-  constructor(scope: Scope, name: string, input: WorkerURLInput) {
-    super(scope, new WorkerURLProvider(scope.client), name, input);
+  constructor(
+    scope: Scope,
+    name: string,
+    input: WorkerURLInput,
+    metadata?: { dependsOn?: string[] }
+  ) {
+    super(scope, new WorkerURLProvider(scope.client), name, input, metadata);
   }
 }

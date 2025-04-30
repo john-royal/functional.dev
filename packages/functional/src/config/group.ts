@@ -12,6 +12,8 @@ export function groupIntoLayers(
   const inDegree = new Map<string, number>();
   const graph = new Map<string, string[]>();
 
+  console.log(Object.fromEntries(items.entries()));
+
   for (const [id, { dependencies }] of items) {
     inDegree.set(id, dependencies?.length ?? 0);
     for (const dep of dependencies ?? []) {
@@ -43,6 +45,8 @@ export function groupIntoLayers(
 
   const check = filterInDegree(inDegree, (degree) => degree !== 0);
   if (check.length > 0) {
+    console.log(layers);
+    console.error(check);
     return err(new CyclicDependencyError(check));
   }
 

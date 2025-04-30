@@ -115,6 +115,7 @@ export class CFClient {
                 })
               );
             }
+            console.log(`${options.path}`, data.result);
             return ok(data.result);
           });
       });

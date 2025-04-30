@@ -17,6 +17,9 @@ export interface ResourceState<TInput, TOutput> {
 
 export interface ResourceProvider<TInput, TOutput, TError extends Error> {
   validate?: (input: TInput) => Result<TInput, z.ZodError>;
+  hydrate?: (
+    state: ResourceState<TInput, TOutput>
+  ) => ResourceState<TInput, TOutput>;
   create: (input: TInput) => ResultAsync<TOutput, TError>;
   diff: (
     state: ResourceState<TInput, TOutput>,
@@ -29,29 +32,49 @@ export interface ResourceProvider<TInput, TOutput, TError extends Error> {
   delete?: (state: ResourceState<TInput, TOutput>) => ResultAsync<void, TError>;
 }
 
+export interface Component<TError extends Error> {
+  scope: Scope;
+  name: string;
+  prepare(
+    phase: "up" | "down"
+  ): ResultAsync<ResourceAction<TError> | null, TError>;
+}
+
 export class ResourceComponent<
   TInput extends Record<string, any>,
   TOutput,
   TError extends Error,
-> {
+> implements Component<TError>
+{
   readonly input: TInput;
   private actionResult = new DetachedResultAsync<
     ResourceAction<TError> | null,
     TError
   >();
-  private outputResult = new DetachedResultAsync<TOutput, TError>();
+  private outputResult = new DetachedResultAsync<TOutput | null, TError>();
 
   constructor(
     readonly scope: Scope,
     readonly provider: ResourceProvider<TInput, TOutput, TError>,
     readonly name: string,
-    input: TInput
+    input: TInput,
+    metadata?: {
+      dependsOn?: string[];
+    }
   ) {
     this.input = input;
+    this.scope.register(this, {
+      dependsOn: metadata?.dependsOn ?? [],
+    });
   }
 
   private getState() {
-    return this.scope.getState<TInput, TOutput>();
+    const state = this.scope.getState<TInput, TOutput>();
+    console.log(state);
+    if (state && this.provider.hydrate) {
+      return this.provider.hydrate(state);
+    }
+    return state;
   }
 
   private setState(state: ResourceState<TInput, TOutput>) {
@@ -66,7 +89,7 @@ export class ResourceComponent<
     return this.actionResult;
   }
 
-  get output(): ResultAsync<TOutput, TError> {
+  get output(): ResultAsync<TOutput | null, TError> {
     return this.outputResult;
   }
 
@@ -80,7 +103,7 @@ export class ResourceComponent<
       >();
     }
     if (this.outputResult.status !== "pending") {
-      this.outputResult = new DetachedResultAsync<TOutput, TError>();
+      this.outputResult = new DetachedResultAsync<TOutput | null, TError>();
     }
     return this.#prepare(phase)
       .map((action) => {
@@ -90,7 +113,7 @@ export class ResourceComponent<
           if (state?.output) {
             this.outputResult.resolve(state.output);
           } else {
-            this.outputResult.reject(new Error("No output") as TError);
+            this.outputResult.resolve(null);
           }
           return null;
         }
@@ -104,7 +127,7 @@ export class ResourceComponent<
                 if (state?.output) {
                   this.outputResult.resolve(state.output);
                 } else {
-                  this.outputResult.reject(new Error("No output") as TError);
+                  this.outputResult.resolve(null);
                 }
               })
               .mapErr((error) => {
