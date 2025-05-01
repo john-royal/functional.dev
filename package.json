@@ -3,7 +3,18 @@
   "packageManager": "bun@1.2.10",
   "private": true,
   "type": "module",
+  "scripts": {
+    "format": "biome format",
+    "format:write": "biome format --write",
+    "lint": "biome lint",
+    "lint:write": "biome lint --write",
+    "check": "biome check",
+    "check:write": "biome check --write"
+  },
   "workspaces": ["packages/*", "examples/*"],
+  "dependencies": {
+    "ignore": "^7.0.4"
+  },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@types/bun": "latest"
