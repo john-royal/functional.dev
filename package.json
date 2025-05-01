@@ -3,17 +3,13 @@
   "packageManager": "bun@1.2.10",
   "private": true,
   "type": "module",
-  "workspaces": [
-    "packages/*",
-    "examples/*"
-  ],
+  "workspaces": ["packages/*", "examples/*"],
   "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
     "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
-  "trustedDependencies": [
-    "@swc/core"
-  ]
+  "trustedDependencies": ["@biomejs/biome"]
 }
