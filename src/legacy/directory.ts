@@ -1,7 +1,7 @@
 import { readdir } from "node:fs/promises";
 import Ignore from "ignore";
-import { Files, type FilesOutput } from "./files";
 import { Resource } from "./resource";
+import { Files, type FilesOutput } from "./resources/bundle/files";
 
 export interface DirectoryInput {
   path: string;

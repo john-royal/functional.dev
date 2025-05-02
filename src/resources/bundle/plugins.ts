@@ -1,5 +1,5 @@
 import path from "node:path";
-import { computeFileHash } from "../lib/file";
+import { computeFileHash } from "../../lib/file";
 
 export class TraceInputPlugin implements Bun.BunPlugin {
   readonly name = "trace-input";
@@ -21,7 +21,7 @@ export class TraceInputPlugin implements Bun.BunPlugin {
         this.files
           .entries()
           .map(async (file) => [
-            path.relative(file[0], process.cwd()),
+            path.relative(process.cwd(), file[0]),
             await file[1],
           ]),
       ),

@@ -1,5 +1,5 @@
-import { BundleFile } from "../../bundle/bundle-file";
-import type { BundleFileProperties } from "../../bundle/bundle-file";
+import { BundleFile } from "../../resources/bundle/bundle-file";
+import type { BundleFileProperties } from "../../resources/bundle/bundle-file";
 import type { SerializableType } from "./common";
 
 const serdeBundleFile: SerializableType<

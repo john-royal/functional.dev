@@ -1,4 +1,7 @@
-import { type CloudflareResponse, cloudflareApi } from "./api";
+import {
+  type CloudflareResponse,
+  cloudflareApi,
+} from "../providers/cloudflare";
 import { Resource } from "./resource";
 
 interface R2BucketInput {
@@ -20,16 +23,26 @@ export const R2Bucket = Resource<"r2-bucket", R2BucketInput, R2BucketOutput>(
   async (ctx) => {
     switch (ctx.phase) {
       case "create": {
-        return ctx.result("create", () => createBucket(ctx.input));
+        return {
+          type: "create",
+          apply: () => createBucket(ctx.input),
+        };
       }
       case "update": {
         if (ctx.input.name !== ctx.output.name) {
-          return ctx.result("replace");
+          return {
+            type: "replace",
+          };
         }
-        return ctx.result("none");
+        return {
+          type: "none",
+        };
       }
       case "delete": {
-        return ctx.result("delete", () => deleteBucket(ctx.output.name));
+        return {
+          type: "delete",
+          apply: () => deleteBucket(ctx.output.name),
+        };
       }
     }
   },

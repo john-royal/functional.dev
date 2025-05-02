@@ -1,5 +1,5 @@
 import path from "node:path";
-import { computeFileHash } from "../lib/file";
+import sha256 from "../../lib/sha256";
 
 export interface BundleFileProperties {
   name: string;
@@ -17,7 +17,7 @@ export class BundleFile implements BundleFileProperties {
     this.name = properties.name;
     this.hash = properties.hash;
     this.kind = properties.kind;
-    this.file = Bun.file(this.name);
+    this.file = Bun.file(path.join(process.cwd(), properties.name));
   }
 
   text = async () => this.file.text();
@@ -25,9 +25,15 @@ export class BundleFile implements BundleFileProperties {
   bytes = async () => this.file.bytes();
 
   static async fromBuildArtifact(artifact: Bun.BuildArtifact) {
+    const bytes = await Bun.file(artifact.path)
+      .bytes()
+      .catch(() => undefined);
+    if (!bytes) {
+      throw new Error(`Failed to read artifact ${artifact.path}`);
+    }
     return new BundleFile({
-      name: path.relative(artifact.path, process.cwd()),
-      hash: await computeFileHash(artifact),
+      name: path.relative(process.cwd(), artifact.path),
+      hash: sha256(bytes),
       kind: artifact.kind,
     });
   }

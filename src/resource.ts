@@ -1,67 +1,106 @@
-interface OutputResult<TOutput> {
-  type: "create" | "update";
-  output: TOutput;
-}
+import { Context } from "./context";
+import { DetachedPromise } from "./lib/detached-promise";
+import type { MaybePromise } from "./lib/types";
 
-interface NoneResult {
-  type: "none" | "replace";
-}
+export abstract class Resource<TKind extends string, TInput, TOutput> {
+  abstract readonly kind: TKind;
+  private readonly dynamicResources = new Map<
+    string,
+    Resource<string, unknown, unknown>
+  >();
 
-interface DeleteResult {
-  type: "delete";
-}
+  constructor(
+    readonly name: string,
+    readonly input: TInput,
+    readonly context = Context.get(),
+  ) {
+    this.context.register(this);
+  }
 
-type Result<TOutput> = OutputResult<TOutput> | NoneResult | DeleteResult;
+  abstract run(
+    context: Resource.Context<TInput, TOutput>,
+  ): MaybePromise<Resource.Action<TOutput>>;
 
-interface BaseContext<TOutput> {
-  use<I, O>(
-    resource: ResourceType<string, I, O>,
+  use<T extends string, I, O>(
+    Resource: {
+      new (name: string, input: I): Resource<T, I, O>;
+    },
+    name: string,
     input: I,
-  ): Promise<{
-    type: "create" | "update" | "none";
-    output: O;
-  }>;
-  result(
-    type: "create" | "update",
-    output: () => Promise<TOutput>,
-  ): OutputResult<TOutput>;
-  result(type: "none" | "replace"): NoneResult;
-  result(type: "delete", output?: () => Promise<void>): DeleteResult;
+  ): Promise<Resource.State<I, O>> {
+    const existing = this.dynamicResources.get(name);
+    if (existing) {
+      return this.context.waitFor(existing as Resource<T, I, O>);
+    }
+    const resource = new Resource(`${this.name}.${name}`, input);
+    this.dynamicResources.set(name, resource);
+    return this.context.waitFor(resource);
+  }
 }
 
-interface CreateContext<TName extends string, TInput, TOutput>
-  extends BaseContext<TOutput> {
-  phase: "create";
-  input: TInput;
-  output: undefined;
+export class ResourceHandle<TInput, TOutput> {
+  action = new DetachedPromise<Resource.Action<TOutput>[]>();
+  state = new DetachedPromise<Resource.State<TInput, TOutput>>();
 }
 
-interface UpdateContext<TName extends string, TInput, TOutput>
-  extends BaseContext<TOutput> {
-  phase: "update";
-  input: TInput;
-  output: TOutput;
-}
+export namespace Resource {
+  export interface CreateAction<T> {
+    status: "create";
+    apply: () => Promise<T>;
+  }
 
-interface DeleteContext<TName extends string, TInput, TOutput>
-  extends BaseContext<TOutput> {
-  phase: "delete";
-  input: TInput;
-  output: TOutput;
-}
+  export interface UpdateAction<T> {
+    status: "update";
+    apply: () => Promise<T>;
+  }
 
-type Context<TName extends string, TInput, TOutput> =
-  | CreateContext<TName, TInput, TOutput>
-  | UpdateContext<TName, TInput, TOutput>
-  | DeleteContext<TName, TInput, TOutput>;
+  export interface ReplaceAction<T> {
+    status: "replace";
+    apply?: () => Promise<T>;
+  }
 
-type ResourceType<TName extends string, TInput, TOutput> = (
-  input: TInput,
-) => Promise<Result<TOutput>>;
+  export interface DeleteAction {
+    status: "delete";
+    apply?: () => Promise<void>;
+  }
 
-export function Resource<TName extends string, TInput, TOutput>(
-  name: TName,
-  handler: (ctx: Context<TName, TInput, TOutput>) => Promise<Result<TOutput>>,
-): ResourceType<TName, TInput, TOutput> {
-  return {} as ResourceType<TName, TInput, TOutput>;
+  export interface NoneAction {
+    status: "none";
+  }
+
+  export type Action<T> =
+    | CreateAction<T>
+    | UpdateAction<T>
+    | ReplaceAction<T>
+    | DeleteAction
+    | NoneAction;
+
+  export interface CreateContext {
+    status: "create";
+    input: undefined;
+    output: undefined;
+  }
+
+  export interface UpdateContext<TInput, TOutput> {
+    status: "update";
+    input: TInput;
+    output: TOutput;
+  }
+
+  export interface DeleteContext<TInput, TOutput> {
+    status: "delete";
+    input: TInput;
+    output: TOutput;
+  }
+
+  export type Context<TInput, TOutput> =
+    | CreateContext
+    | UpdateContext<TInput, TOutput>
+    | DeleteContext<TInput, TOutput>;
+
+  export interface State<TInput, TOutput> {
+    status: "created" | "updated" | "none";
+    input: TInput;
+    output: TOutput;
+  }
 }

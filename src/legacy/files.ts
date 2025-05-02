@@ -1,4 +1,4 @@
-import { computeFileHash, verifyFileHashes } from "./lib/file";
+import { computeFileHash, verifyFileHashes } from "../lib/file";
 import { Resource } from "./resource";
 
 export interface FilesInput {
@@ -14,20 +14,26 @@ export const Files = Resource<"files", FilesInput, FilesOutput>(
   async (ctx) => {
     switch (ctx.phase) {
       case "create":
-        return ctx.result("create", () =>
-          generateFileManifest(ctx.input.paths),
-        );
+        return {
+          type: "create",
+          apply: () => generateFileManifest(ctx.input.paths),
+        };
       case "update": {
         const changed = await verifyFileHashes(ctx.output.files);
         if (!changed) {
-          return ctx.result("none");
+          return {
+            type: "none",
+          };
         }
-        return ctx.result("update", () =>
-          generateFileManifest(ctx.input.paths),
-        );
+        return {
+          type: "update",
+          apply: () => generateFileManifest(ctx.input.paths),
+        };
       }
       case "delete":
-        return ctx.result("delete");
+        return {
+          type: "delete",
+        };
     }
   },
 );

@@ -23,26 +23,43 @@ export class Serde {
     if (!type) {
       throw new Error(`Unknown type: ${JSON.stringify(value)}`);
     }
-    return { "~kind": type.kind, value: this.serialize(type.serialize(value)) };
+    return {
+      "~kind": type.kind,
+      "~value": this.serialize(type.serialize(value)),
+    };
   };
 
-  stringify: typeof JSON.stringify = (...args) => {
-    return JSON.stringify(this.serialize(args[0]), ...args.slice(1));
-  };
-
-  parse = (value: string): unknown => {
-    return JSON.parse(value, (_, value) => this.deserialize(value));
-  };
-
-  private deserialize(value: unknown): unknown {
-    if (typeof value === "object" && value !== null && "~kind" in value) {
+  deserialize<T>(value: unknown): T {
+    if (this.isSerializedType(value)) {
       const type = this.types.find((type) => type.kind === value["~kind"]);
       if (!type) {
         throw new Error(`Unknown type: ${value["~kind"]}`);
       }
-      return type.deserialize(value);
+      return type.deserialize(value["~value"]);
     }
-    return value;
+    if (Array.isArray(value)) {
+      return value.map((value) => this.deserialize(value)) as T;
+    }
+    if (this.isJSONObject(value)) {
+      return Object.fromEntries(
+        Object.entries(value).map(([key, value]) => [
+          key,
+          this.deserialize(value),
+        ]),
+      ) as T;
+    }
+    return value as T;
+  }
+
+  private isSerializedType(
+    value: unknown,
+  ): value is { "~kind": string; "~value": unknown } {
+    return (
+      typeof value === "object" &&
+      value !== null &&
+      "~kind" in value &&
+      "~value" in value
+    );
   }
 
   private isJSONPrimitive(
