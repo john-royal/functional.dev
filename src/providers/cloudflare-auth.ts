@@ -114,6 +114,10 @@ class WranglerConfigProvider {
       }).toString(),
     });
     const json = await res.json();
+    if (!res.ok) {
+      const error = OAuthError.parse(json);
+      throw new Error(`Failed to refresh token: ${error.error_description}`);
+    }
     return OAuthTokens.parse(json);
   }
 }
@@ -142,6 +146,15 @@ const OAuthTokens = z
     }),
   );
 type OAuthTokens = z.infer<typeof OAuthTokens>;
+
+const OAuthError = z.object({
+  error: z.string(),
+  error_verbose: z.string(),
+  error_description: z.string(),
+  error_hint: z.string(),
+  status_code: z.number(),
+});
+type OAuthError = z.infer<typeof OAuthError>;
 
 class SingleFlight<TResult> {
   result?: Promise<TResult>;

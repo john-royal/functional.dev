@@ -72,9 +72,6 @@ export default class KVNamespace extends Resource<
   private async deleteKvNamespace(id: string) {
     await cloudflareApi.delete(
       `/accounts/${cloudflareApi.accountId}/storage/kv/namespaces/${id}`,
-      {
-        responseSchema: z.any(),
-      },
     );
   }
 }
