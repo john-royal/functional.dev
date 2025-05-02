@@ -152,7 +152,7 @@ const OAuthError = z.object({
   error: z.string(),
   error_verbose: z.string(),
   error_description: z.string(),
-  error_hint: z.string(),
+  error_hint: z.string().optional(),
   status_code: z.number(),
 });
 type OAuthError = z.infer<typeof OAuthError>;
