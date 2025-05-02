@@ -1,5 +1,5 @@
 export default {
-  async fetch(request, env) {
-    return await env.ASSETS.fetch(request);
+  async fetch(request: Request, env: unknown) {
+    return new Response("Hello World");
   },
 };

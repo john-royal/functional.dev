@@ -10,7 +10,8 @@ Context.enter(ctx);
 const worker = new Worker("test-worker", {
   name: "test-worker",
   handler: "test-worker.ts",
-  url: true,
-  assets: "./assets",
+  url: false,
 });
+console.time("test-worker");
 await ctx.run();
+console.timeEnd("test-worker");

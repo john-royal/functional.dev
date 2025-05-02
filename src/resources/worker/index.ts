@@ -1,13 +1,11 @@
 import assert from "node:assert";
-import {
-  type CloudflareResponse,
-  cloudflareApi,
-} from "../providers/cloudflare";
-import { Resource } from "../resource";
-import Bundle from "./bundle";
-import type KVNamespace from "./kv-namespace";
-import WorkerAssets from "./worker-assets";
-import WorkerURL from "./worker-url";
+import z from "zod";
+import { cloudflareApi } from "../../providers/cloudflare";
+import { Resource } from "../../resource";
+import Bundle from "../bundle";
+import type KVNamespace from "../kv-namespace";
+import WorkerAssets from "./assets";
+import WorkerURL from "./url";
 
 interface WorkerInput {
   name: string;
@@ -62,7 +60,9 @@ export default class Worker extends Resource<
     if (context.status === "delete") {
       return {
         status: "delete",
-        apply: () => deleteWorker(context.input.name),
+        apply: async () => {
+          await deleteWorker(context.input.name);
+        },
       };
     }
     const dependencies = await Promise.all([
@@ -72,7 +72,9 @@ export default class Worker extends Resource<
     if (
       context.status === "update" &&
       Bun.deepEquals(this.input, context.input) &&
-      dependencies.every((dependency) => dependency?.status === "none")
+      dependencies.every(
+        (dependency) => !dependency || dependency.status === "none",
+      )
     ) {
       return {
         status: "none",
@@ -143,42 +145,20 @@ const putWorker = async (
       file.name,
     );
   }
-  const res = await cloudflareApi.put(
+  return await cloudflareApi.put(
     `/accounts/${cloudflareApi.accountId}/workers/scripts/${name}`,
     {
       body: {
         type: "form",
         value: formData,
       },
+      responseSchema: z.any(),
     },
   );
-  const json = await res.json<CloudflareResponse<Record<string, string>>>();
-  if (!res.ok || !json.success) {
-    console.log({
-      status: res.status,
-      statusText: res.statusText,
-      errors: json.errors,
-    });
-    throw new Error(json.errors[0]?.message ?? "Unknown error", {
-      cause: json.errors,
-    });
-  }
-  return json.result;
 };
 
 const deleteWorker = async (name: string) => {
-  const res = await cloudflareApi.delete(
+  return await cloudflareApi.delete(
     `/accounts/${cloudflareApi.accountId}/workers/scripts/${name}`,
   );
-  const json = await res.json<CloudflareResponse<never>>();
-  if (!res.ok || !json.success) {
-    console.log({
-      status: res.status,
-      statusText: res.statusText,
-      errors: json.errors,
-    });
-    throw new Error(json.errors[0]?.message ?? "Unknown error", {
-      cause: json.errors,
-    });
-  }
 };

@@ -1,7 +1,5 @@
-import {
-  type CloudflareResponse,
-  cloudflareApi,
-} from "../providers/cloudflare";
+import z from "zod";
+import { cloudflareApi } from "../providers/cloudflare";
 import { Resource } from "../resource";
 
 interface KvNamespaceInput {
@@ -52,7 +50,7 @@ export default class KVNamespace extends Resource<
   }
 
   private async createKvNamespace(input: KvNamespaceInput) {
-    const res = await cloudflareApi.post(
+    return await cloudflareApi.post(
       `/accounts/${cloudflareApi.accountId}/storage/kv/namespaces`,
       {
         body: {
@@ -61,22 +59,22 @@ export default class KVNamespace extends Resource<
             title: input.title,
           },
         },
+        responseSchema: z.object({
+          id: z.string(),
+          title: z.string(),
+          beta: z.boolean(),
+          supports_url_encoding: z.boolean(),
+        }),
       },
     );
-    const json = await res.json<CloudflareResponse<KvNamespaceOutput>>();
-    if (!res.ok || !json.success) {
-      throw new Error(json.errors[0]?.message ?? "Unknown error");
-    }
-    return json.result;
   }
 
   private async deleteKvNamespace(id: string) {
-    const res = await cloudflareApi.delete(
+    await cloudflareApi.delete(
       `/accounts/${cloudflareApi.accountId}/storage/kv/namespaces/${id}`,
+      {
+        responseSchema: z.any(),
+      },
     );
-    const json = await res.json<CloudflareResponse<never>>();
-    if (!res.ok || !json.success) {
-      throw new Error(json.errors[0]?.message ?? "Unknown error");
-    }
   }
 }

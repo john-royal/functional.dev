@@ -1,6 +1,6 @@
-import toml from "@iarna/toml";
 import os from "node:os";
 import path from "node:path";
+import toml from "@iarna/toml";
 import xdgAppPaths from "xdg-app-paths";
 import { z } from "zod";
 

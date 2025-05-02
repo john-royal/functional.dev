@@ -2,12 +2,10 @@ import assert from "node:assert";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 import Ignore from "ignore";
-import sha256 from "../lib/sha256";
-import {
-  type CloudflareResponse,
-  cloudflareApi,
-} from "../providers/cloudflare";
-import { Resource } from "../resource";
+import z from "zod";
+import sha256 from "../../lib/sha256";
+import { cloudflareApi } from "../../providers/cloudflare";
+import { Resource } from "../../resource";
 
 export interface WorkerAssetsInput {
   scriptName: string;
@@ -79,24 +77,19 @@ export default class WorkerAssets extends Resource<
   }
 
   private async createAssetUploadSession(manifest: WorkerAssetsManifest) {
-    const res = await cloudflareApi.post(
+    return await cloudflareApi.post(
       `/accounts/${cloudflareApi.accountId}/workers/scripts/${this.input.scriptName}/assets-upload-session`,
       {
         body: {
           type: "json",
           value: { manifest },
         },
+        responseSchema: z.object({
+          jwt: z.string().optional(),
+          buckets: z.array(z.array(z.string())).optional(),
+        }),
       },
     );
-    const text = await res.text();
-    const json = JSON.parse(text) as CloudflareResponse<{
-      jwt?: string;
-      buckets?: string[][];
-    }>;
-    if (!res.ok || !json.success) {
-      throw new Error(json.errors[0]?.message ?? "Unknown error");
-    }
-    return json.result;
   }
 
   private async uploadAssets(
@@ -123,14 +116,13 @@ export default class WorkerAssets extends Resource<
               type: "form",
               value: formData,
             },
+            responseSchema: z.object({
+              jwt: z.string().optional(),
+            }),
           },
         );
-        const json = await res.json<CloudflareResponse<{ jwt?: string }>>();
-        if (!res.ok || !json.success) {
-          throw new Error(json.errors[0]?.message ?? "Unknown error");
-        }
-        if (json.result.jwt) {
-          completionToken = json.result.jwt;
+        if (res.jwt) {
+          completionToken = res.jwt;
         }
       }),
     );

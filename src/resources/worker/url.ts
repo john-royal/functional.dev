@@ -1,6 +1,6 @@
-import { cloudflareApi } from "../providers/cloudflare";
-import type { CloudflareResponse } from "../providers/cloudflare";
-import { Resource } from "../resource";
+import z from "zod";
+import { cloudflareApi } from "../../providers/cloudflare";
+import { Resource } from "../../resource";
 
 export interface WorkerURLInput {
   scriptName: string;
@@ -59,16 +59,17 @@ export default class WorkerURL extends Resource<
   private async getSubdomain() {
     const res = await cloudflareApi.get(
       `/accounts/${cloudflareApi.accountId}/workers/subdomain`,
+      {
+        responseSchema: z.object({
+          subdomain: z.string(),
+        }),
+      },
     );
-    const json = await res.json<CloudflareResponse<{ subdomain: string }>>();
-    if (!res.ok || !json.success) {
-      throw new Error(json.errors[0]?.message ?? "Unknown error");
-    }
-    return json.result.subdomain;
+    return res.subdomain;
   }
 
   private async put(input: WorkerURLInput): Promise<void> {
-    const res = await cloudflareApi.post(
+    await cloudflareApi.post(
       `/accounts/${cloudflareApi.accountId}/workers/scripts/${input.scriptName}/subdomain`,
       {
         body: {
@@ -77,11 +78,14 @@ export default class WorkerURL extends Resource<
             ? { enabled: true, previews_enabled: true }
             : { enabled: false },
         },
+        responseSchema: z.union([
+          z.object({
+            enabled: z.boolean(),
+            previews_enabled: z.boolean(),
+          }),
+          z.null(),
+        ]),
       },
     );
-    const json = await res.json<CloudflareResponse<WorkerURLOutput | null>>();
-    if (!res.ok || !json.success) {
-      throw new Error(json.errors[0]?.message ?? "Unknown error");
-    }
   }
 }

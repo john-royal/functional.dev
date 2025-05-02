@@ -79,7 +79,6 @@ export class Context {
         Array.from(this.resources.values()),
       );
 
-      console.log(steps);
       if (actions.values().every(({ actions }) => actions.length === 0)) {
         console.log("No changes detected");
         return;
