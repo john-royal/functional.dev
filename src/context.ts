@@ -1,10 +1,15 @@
 import assert from "node:assert";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { DetachedPromise } from "./lib/detached-promise";
+import { groupByDependencies } from "./lib/group";
 import { serde } from "./lib/serde";
-import { ResourceHandle, type Resource } from "./resource";
+import type { Resource } from "./resource";
 
-class DependsOn {
-  constructor(readonly dependsOn: string[]) {}
+class AwaitedDependency {}
+
+class ResourceHandle {
+  actions = new DetachedPromise<Resource.Action<unknown>[]>();
+  state = new DetachedPromise<Resource.State<unknown, unknown>>();
 }
 
 export class Context {
@@ -27,8 +32,7 @@ export class Context {
     string,
     Resource.State<unknown, unknown> & { kind: string; name: string }
   > = {};
-  handles = new Map<string, ResourceHandle<unknown, unknown>>();
-  dynamicRegister?: (resource: Resource<string, unknown, unknown>) => void;
+  handles = new Map<string, ResourceHandle>();
 
   constructor(readonly phase: "up" | "down") {}
 
@@ -48,25 +52,18 @@ export class Context {
     if (this.resources.has(resource.name)) {
       throw new Error(`Resource ${resource.name} already registered`);
     }
-    console.log(`Registering resource ${resource.name}`);
     this.resources.set(resource.name, resource);
     this.handles.set(resource.name, new ResourceHandle());
-    this.dynamicRegister?.(resource);
   }
 
   async waitFor<TInput, TOutput>(
     resource: Resource<string, TInput, TOutput>,
   ): Promise<Resource.State<TInput, TOutput>> {
     const handle = this.handles.get(resource.name);
-    if (!handle) {
-      throw new Error(`Resource ${resource.name} not registered`);
-    }
-    const actions = await handle.action.promise;
+    assert(handle, `Resource ${resource.name} not registered`);
+    await handle.actions.promise;
     if (handle.state.status === "pending") {
-      console.log(`Wait for ${resource.name} ${actions.length} actions`);
-      throw new DependsOn(
-        actions.map((action) => `${resource.name}:${action.status}`),
-      );
+      throw new AwaitedDependency();
     }
     const state = this.state[resource.name];
     if (!state) {
@@ -78,7 +75,29 @@ export class Context {
   async run() {
     await this.init();
     try {
-      await this.doRun(Array.from(this.resources.values()));
+      const { actions, steps } = await this.plan(
+        Array.from(this.resources.values()),
+      );
+
+      console.log(steps);
+      if (actions.values().every(({ actions }) => actions.length === 0)) {
+        console.log("No changes detected");
+        return;
+      }
+      if (this.phase === "down") {
+        steps.reverse();
+      }
+      for (const step of steps) {
+        await Promise.all(
+          step.map(async (resourceName) => {
+            const resource = this.resources.get(resourceName);
+            const item = actions.get(resourceName);
+            assert(resource, `Resource ${resourceName} not registered`);
+            assert(item, `Resource ${resourceName} has no actions`);
+            await this.applyResource(resource, item.actions);
+          }),
+        );
+      }
     } finally {
       await this.save();
       await this.cleanup();
@@ -86,28 +105,17 @@ export class Context {
   }
 
   async cleanup() {
-    const orphans = Object.keys(this.state).filter(
-      (name) => !this.resources.has(name),
+    await Promise.all(
+      Object.entries(this.state).map(async ([name, state]) => {
+        if (this.resources.has(name)) {
+          return;
+        }
+        const ResourceClass = await this.getResourceClass(state.kind);
+        const resource = new ResourceClass(state.name, state.input);
+        const actions = await this.planResource(resource, "down");
+        return this.applyResource(resource, actions);
+      }),
     );
-    for (const orphan of orphans) {
-      const state = this.state[orphan];
-      if (!state) {
-        continue;
-      }
-      const ResourceClass = await this.getResourceClass(state.kind);
-      const resource = new ResourceClass(state.name, state.input);
-      const actions = await this.planResource(resource, "down");
-      await Promise.allSettled(
-        actions.map(async (action) => {
-          try {
-            await action.apply?.();
-            delete this.state[resource.name];
-          } catch (error) {
-            console.error(`Failed to delete resource ${resource.name}`, error);
-          }
-        }),
-      );
-    }
     await this.save();
   }
 
@@ -125,150 +133,68 @@ export class Context {
     }
   }
 
-  private async doRun(
-    resources: Resource<string, unknown, unknown>[],
-    attempt = 0,
-  ) {
-    const actions = await this.plan(resources);
-    console.log(
-      `${attempt + 1}: Detected ${actions.length} resources with ${actions.reduce((acc, item) => acc + item.actions.length, 0)} actions`,
-    );
-    const leftover: Resource<string, unknown, unknown>[] = [];
-    await Promise.allSettled(
-      actions.map(async (item) => {
-        if (item.dependsOn.length > 0) {
-          console.log(
-            `${item.resource.name} depends on ${item.dependsOn.join(", ")}`,
-          );
-          leftover.push(item.resource);
-          return;
-        }
-        const handle = this.handles.get(item.resource.name);
-        assert(handle, `Resource ${item.resource.name} not registered`);
-        try {
-          for (const action of item.actions) {
-            console.log(`[${item.resource.name}] ${action.status}`);
-            await this.applyResource(item.resource, action);
-          }
-          handle.state.resolve(
-            this.state[item.resource.name] as Resource.State<unknown, unknown>,
-          );
-        } catch (error) {
-          console.error(
-            `Failed to apply resource ${item.resource.name}`,
-            error,
-          );
-          handle.state.reject(error);
-        }
+  private async plan(resources: Resource<string, unknown, unknown>[]) {
+    const actionsList = await Promise.all(
+      resources.map(async (resource) => {
+        const actions = await this.planResource(resource);
+        return [
+          resource.name,
+          {
+            actions,
+            dependencies: resource.dependencies,
+          },
+        ] as const;
       }),
     );
-    if (leftover.length > 0) {
-      if (attempt >= 3) {
-        console.log("Leftover resources:", leftover);
-        throw new Error("Too many attempts");
-      }
-      for (const item of resources) {
-        this.handles.set(item.name, new ResourceHandle());
-      }
-      await this.doRun(resources, attempt + 1);
-    }
-  }
-
-  private async plan(resources: Resource<string, unknown, unknown>[]) {
-    const foundResources = new Set<string>();
-    const planStream = new TransformStream<
-      Resource<string, unknown, unknown>,
-      | {
-          resource: Resource<string, unknown, unknown>;
-          actions: (
-            | Resource.CreateAction<unknown>
-            | Resource.UpdateAction<unknown>
-            | Resource.DeleteAction
-          )[];
-          dependsOn: never[];
-        }
-      | {
-          resource: Resource<string, unknown, unknown>;
-          dependsOn: string[];
-          actions: never[];
-        }
-    >({
-      transform: (resource, controller) => {
-        const handle = this.handles.get(resource.name);
-        assert(handle, `Resource ${resource.name} not registered`);
-        this.planResource(resource)
-          .then((actions) => {
-            console.log(`Plan ${resource.name} ${actions.length} actions`);
-            handle.action.resolve(actions);
-            controller.enqueue({
-              resource,
-              actions,
-              dependsOn: [],
-            });
-          })
-          .catch((error) => {
-            if (error instanceof DependsOn) {
-              handle.action.resolve([]);
-              controller.enqueue({
-                resource,
-                dependsOn: error.dependsOn,
-                actions: [],
-              });
-            } else {
-              controller.error(error);
-            }
-          })
-          .finally(() => {
-            foundResources.add(resource.name);
-            if (
-              resources.every((resource) => foundResources.has(resource.name))
-            ) {
-              writer.close();
-            }
-          });
-      },
-      flush: () => {
-        this.dynamicRegister = undefined;
-      },
-    });
-    const writer = planStream.writable.getWriter();
-    this.dynamicRegister = (resource) => {
-      console.log(`Dynamic register ${resource.name}`);
-      writer.write(resource);
+    const actions = new Map(actionsList);
+    const steps = groupByDependencies(actions);
+    return {
+      actions,
+      steps,
     };
-    for (const resource of resources) {
-      writer.write(resource);
-    }
-    return Array.fromAsync(planStream.readable);
   }
 
   private async applyResource(
     resource: Resource<string, unknown, unknown>,
-    action:
-      | Resource.CreateAction<unknown>
-      | Resource.UpdateAction<unknown>
-      | Resource.DeleteAction,
+    actions: Resource.Action<unknown>[],
+    log = true,
   ) {
-    switch (action.status) {
-      case "create":
-      case "update": {
-        const output = await action.apply();
-        this.state[resource.name] = {
-          kind: resource.kind,
-          name: resource.name,
-          status: action.status === "create" ? "created" : "updated",
-          input: resource.input,
-          output,
-        };
-        return;
+    const handle = this.handles.get(resource.name);
+    assert(handle, `Resource ${resource.name} not registered`);
+
+    for (const action of actions) {
+      if (log) {
+        console.log(`[${resource.name}] ${action.status}`);
       }
-      case "delete": {
-        if (action.apply) {
-          await action.apply();
+      switch (action.status) {
+        case "create":
+        case "update": {
+          const output = await action.apply();
+          this.state[resource.name] = {
+            kind: resource.kind,
+            name: resource.name,
+            status: action.status === "create" ? "created" : "updated",
+            input: resource.input,
+            output,
+          };
+          break;
         }
-        delete this.state[resource.name];
-        return;
+        case "delete": {
+          if (action.apply) {
+            await action.apply();
+          }
+          delete this.state[resource.name];
+          break;
+        }
+        case "none":
+        case "replace":
+          break;
       }
+    }
+
+    const state = this.state[resource.name];
+    if (state) {
+      handle.state.resolve(state);
     }
   }
 
@@ -282,36 +208,64 @@ export class Context {
       | Resource.DeleteAction
     )[]
   > {
-    const context = this.getResourceContext(this.phase, resource.name);
+    const handle = this.handles.get(resource.name);
+    assert(handle, `Resource ${resource.name} not registered`);
+    const context = this.getResourceContext(phase, resource.name);
     if (!context) {
       return [];
     }
-    return await Promise.resolve(resource.run(context)).then(async (action) => {
-      if (action.status === "none") {
-        this.state[resource.name] = {
-          ...this.state[resource.name],
-          status: "none",
-        } as Resource.State<unknown, unknown> & { kind: string; name: string };
-        return [];
-      }
-      if (action.status === "replace") {
-        const [createAction, deleteAction] = await Promise.all([
-          resource.run({
-            ...context,
-            status: "delete",
-          }),
-          resource.run({
-            status: "create",
-            input: undefined,
-            output: undefined,
-          }),
-        ]);
-        assert(deleteAction.status === "delete");
-        assert(createAction.status === "create");
-        return [deleteAction, createAction];
-      }
-      return [action];
-    });
+    return await Promise.resolve(resource.run(context))
+      .then(async (action) => {
+        if (action.status === "none") {
+          const state = {
+            ...this.state[resource.name],
+            status: "none",
+          } as Resource.State<unknown, unknown> & {
+            kind: string;
+            name: string;
+          };
+          this.state[resource.name] = state;
+          handle.state.resolve(state);
+          handle.actions.resolve([]);
+          return [];
+        }
+        if (action.status === "replace") {
+          const [createAction, deleteAction] = await Promise.all([
+            resource.run({
+              ...context,
+              status: "delete",
+            }),
+            resource.run({
+              status: "create",
+              input: undefined,
+              output: undefined,
+            }),
+          ]);
+          assert(deleteAction.status === "delete");
+          assert(createAction.status === "create");
+          const actions = [deleteAction, createAction];
+          handle.actions.resolve(actions);
+          return actions;
+        }
+        handle.actions.resolve([action]);
+        return [action];
+      })
+      .catch((error) => {
+        if (error instanceof AwaitedDependency) {
+          const actions: Resource.UpdateAction<unknown>[] = [
+            {
+              status: "update",
+              apply: async () => {
+                const actions = await this.planResource(resource);
+                return this.applyResource(resource, actions, false);
+              },
+            },
+          ];
+          handle.actions.resolve(actions);
+          return actions;
+        }
+        throw error;
+      });
   }
 
   private getResourceContext(

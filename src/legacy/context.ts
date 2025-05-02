@@ -1,6 +1,6 @@
-import type { IContext, ResourceType, Result } from "./resource";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { serde } from "../lib/serde";
+import type { IContext, ResourceType, Result } from "./resource";
 
 const state: Record<
   string,

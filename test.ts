@@ -1,13 +1,16 @@
 import { Context } from "./src/context";
+import { cloudflareApi } from "./src/providers/cloudflare";
+// import KVNamespace from "./src/resources/kv-namespace";
 import Worker from "./src/resources/worker";
-import KVNamespace from "./src/resources/kv-namespace";
 
 const ctx = new Context("down");
+await cloudflareApi.init();
 Context.enter(ctx);
 
-const kv = new KVNamespace("test-kv", { title: "test" });
 const worker = new Worker("test-worker", {
   name: "test-worker",
   handler: "test-worker.ts",
+  url: true,
+  assets: "./assets",
 });
 await ctx.run();

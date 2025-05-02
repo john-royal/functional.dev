@@ -1,14 +1,20 @@
+import assert from "node:assert";
 import {
-  cloudflareApi,
   type CloudflareResponse,
+  cloudflareApi,
 } from "../providers/cloudflare";
 import { Resource } from "../resource";
 import Bundle from "./bundle";
-import assert from "node:assert";
+import type KVNamespace from "./kv-namespace";
+import WorkerAssets from "./worker-assets";
+import WorkerURL from "./worker-url";
 
 interface WorkerInput {
   name: string;
   handler: string;
+  url?: boolean;
+  assets?: string;
+  bindings?: Record<string, KVNamespace>;
 }
 
 type WorkerOutput = Record<string, string>;
@@ -20,6 +26,36 @@ export default class Worker extends Resource<
 > {
   readonly kind = "worker";
 
+  bundle: Bundle;
+  assets?: WorkerAssets;
+  url: WorkerURL;
+
+  constructor(name: string, input: WorkerInput) {
+    super(name, input);
+    this.bundle = new Bundle(`${this.name}.bundle`, {
+      entrypoints: [this.input.handler],
+      sourcemap: "external",
+      outdir: "dist",
+      format: "esm",
+      target: "node",
+    });
+    this.assets = this.input.assets
+      ? new WorkerAssets(`${this.name}.assets`, {
+          scriptName: this.input.name,
+          path: this.input.assets,
+        })
+      : undefined;
+    this.url = new WorkerURL(
+      `${this.name}.url`,
+      {
+        scriptName: this.input.name,
+        enabled: this.input.url ?? false,
+      },
+      { dependencies: [this.name] },
+    );
+    this.dependencies.push(this.bundle.name);
+  }
+
   async run(
     context: Resource.Context<WorkerInput, WorkerOutput>,
   ): Promise<Resource.Action<WorkerOutput>> {
@@ -29,12 +65,15 @@ export default class Worker extends Resource<
         apply: () => deleteWorker(context.input.name),
       };
     }
-    const bundle = await this.use(Bundle, "bundle", {
-      entrypoints: [this.input.handler],
-      outdir: "dist",
-      format: "esm",
-    });
-    if (bundle.status === "none" && context.status === "update") {
+    const dependencies = await Promise.all([
+      this.use(this.bundle),
+      this.assets ? this.use(this.assets) : undefined,
+    ]);
+    if (
+      context.status === "update" &&
+      Bun.deepEquals(this.input, context.input) &&
+      dependencies.every((dependency) => dependency?.status === "none")
+    ) {
       return {
         status: "none",
       };
@@ -42,6 +81,7 @@ export default class Worker extends Resource<
     return {
       status: context.status,
       apply: async () => {
+        const [bundle, assets] = dependencies;
         const artifacts = await Promise.all(
           bundle.output.artifacts.map(async (artifact) => ({
             name: artifact.name.replace("dist/", ""),
@@ -49,7 +89,7 @@ export default class Worker extends Resource<
               artifact.kind === "entry-point" || artifact.kind === "chunk"
                 ? "application/javascript+module"
                 : artifact.kind === "sourcemap"
-                  ? "application/sourcemap"
+                  ? "application/source-map"
                   : "application/octet-stream",
             content: await artifact.text(),
             kind: artifact.kind,
@@ -60,7 +100,23 @@ export default class Worker extends Resource<
         );
         assert(entryPoint, "No entry point found");
         const metadata = {
+          assets: assets
+            ? {
+                jwt: assets.output.jwt,
+                config: {
+                  _headers: assets.output.headers,
+                  _redirects: assets.output.redirects,
+                  run_worker_first: false,
+                  html_handling: "drop-trailing-slash",
+                  not_found_handling: "404-page",
+                },
+              }
+            : undefined,
           main_module: entryPoint.name,
+          observability: { enabled: true },
+          compatibility_flags: ["nodejs_compat"],
+          compatibility_date: "2025-05-01",
+          bindings: assets ? [{ name: "ASSETS", type: "assets" }] : undefined,
         };
         return putWorker(this.input.name, metadata, artifacts);
       },
@@ -70,7 +126,7 @@ export default class Worker extends Resource<
 
 const putWorker = async (
   name: string,
-  metadata: Record<string, string>,
+  metadata: Record<string, unknown>,
   files: { name: string; type: string; content: string }[],
 ) => {
   const formData = new FormData();
@@ -107,7 +163,7 @@ const putWorker = async (
       cause: json.errors,
     });
   }
-  return metadata;
+  return json.result;
 };
 
 const deleteWorker = async (name: string) => {

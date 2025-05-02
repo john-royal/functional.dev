@@ -1,19 +1,36 @@
 import { APIClient, type FetchOptions } from "../lib/api";
+import { CloudflareAuth } from "./cloudflare-auth";
 
 interface CloudflareClientOptions {
-  accountId: string;
-  apiToken: string;
+  accountId?: string;
 }
 
 export class CloudflareClient {
   api: APIClient;
-  accountId: string;
+  auth: CloudflareAuth;
+  accountId?: string;
 
   constructor(options: CloudflareClientOptions) {
-    this.api = new APIClient("https://api.cloudflare.com/client/v4", {
-      Authorization: `Bearer ${options.apiToken}`,
-    });
+    this.auth = new CloudflareAuth();
+    this.api = new APIClient("https://api.cloudflare.com/client/v4", () =>
+      this.auth.get(),
+    );
     this.accountId = options.accountId;
+  }
+
+  async init() {
+    if (this.accountId) {
+      return;
+    }
+    const res = await this.get("/accounts");
+    const json = await res.json<CloudflareResponse<{ id: string }[]>>();
+    if (!res.ok || !json.success) {
+      throw new Error(json.errors[0]?.message ?? "Unknown error");
+    }
+    if (!json.result[0]) {
+      throw new Error("No accounts found");
+    }
+    this.accountId = json.result[0].id;
   }
 
   async fetch<T>(path: `/${string}`, options: FetchOptions<T>) {
@@ -89,6 +106,5 @@ export type CloudflareResponse<T> =
   | CloudflareErrorResponse;
 
 export const cloudflareApi = new CloudflareClient({
-  accountId: process.env.CLOUDFLARE_ACCOUNT_ID!,
-  apiToken: process.env.CLOUDFLARE_API_TOKEN!,
+  accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
 });

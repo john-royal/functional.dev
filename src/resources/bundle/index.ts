@@ -1,8 +1,8 @@
 import { rmdir } from "node:fs/promises";
 import { verifyFileHashes } from "../../lib/file";
+import { Resource } from "../../resource";
 import { BundleFile } from "./bundle-file";
 import { TraceInputPlugin } from "./plugins";
-import { Resource } from "../../resource";
 
 interface BundleOutput {
   inputs: Record<string, string>;
@@ -26,15 +26,17 @@ export default class Bundle extends Resource<
           apply: () => runBuild(this.input),
         };
       case "update": {
-        const { changed } = await verifyFileHashes(context.output.inputs);
-        if (!changed) {
+        if (
+          !Bun.deepEquals(this.input, context.input) ||
+          (await verifyFileHashes(context.output.inputs))
+        ) {
           return {
-            status: "none",
+            status: "update",
+            apply: () => runBuild(this.input),
           };
         }
         return {
-          status: "update",
-          apply: () => runBuild(this.input),
+          status: "none",
         };
       }
       case "delete": {

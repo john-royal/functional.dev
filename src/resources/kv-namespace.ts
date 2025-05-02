@@ -1,6 +1,6 @@
 import {
-  cloudflareApi,
   type CloudflareResponse,
+  cloudflareApi,
 } from "../providers/cloudflare";
 import { Resource } from "../resource";
 

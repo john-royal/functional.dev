@@ -13,7 +13,10 @@
   },
   "workspaces": ["packages/*", "examples/*"],
   "dependencies": {
-    "ignore": "^7.0.4"
+    "@iarna/toml": "^2.2.5",
+    "ignore": "^7.0.4",
+    "xdg-app-paths": "^8.3.0",
+    "zod": "^3.24.3"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

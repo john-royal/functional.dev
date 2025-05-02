@@ -1,5 +1,4 @@
 import { Context } from "./context";
-import { DetachedPromise } from "./lib/detached-promise";
 import type { MaybePromise } from "./lib/types";
 
 export abstract class Resource<TKind extends string, TInput, TOutput> {
@@ -8,12 +7,15 @@ export abstract class Resource<TKind extends string, TInput, TOutput> {
     string,
     Resource<string, unknown, unknown>
   >();
+  dependencies: string[] = [];
 
   constructor(
     readonly name: string,
     readonly input: TInput,
+    metadata?: { dependencies: string[] },
     readonly context = Context.get(),
   ) {
+    this.dependencies = metadata?.dependencies ?? [];
     this.context.register(this);
   }
 
@@ -22,27 +24,11 @@ export abstract class Resource<TKind extends string, TInput, TOutput> {
   ): MaybePromise<Resource.Action<TOutput>>;
 
   use<T extends string, I, O>(
-    Resource: {
-      new (name: string, input: I): Resource<T, I, O>;
-    },
-    name: string,
-    input: I,
+    resource: Resource<T, I, O>,
   ): Promise<Resource.State<I, O>> {
-    const existing = this.dynamicResources.get(name);
-    if (existing) {
-      return this.context.waitFor(existing as Resource<T, I, O>);
-    }
-    const resource = new Resource(`${this.name}.${name}`, input);
-    this.dynamicResources.set(name, resource);
     return this.context.waitFor(resource);
   }
 }
-
-export class ResourceHandle<TInput, TOutput> {
-  action = new DetachedPromise<Resource.Action<TOutput>[]>();
-  state = new DetachedPromise<Resource.State<TInput, TOutput>>();
-}
-
 export namespace Resource {
   export interface CreateAction<T> {
     status: "create";

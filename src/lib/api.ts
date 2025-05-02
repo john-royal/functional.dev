@@ -1,3 +1,5 @@
+import type { MaybePromise } from "./types";
+
 export type TypedResponse = Omit<Response, "json"> & {
   json<T>(): Promise<T>;
 };
@@ -26,7 +28,7 @@ export interface FetchOptions<T> {
 export class APIClient {
   constructor(
     readonly baseUrl: string,
-    readonly headers: Record<string, string>,
+    readonly headers: () => MaybePromise<Record<string, string>>,
   ) {}
 
   async fetch<Body>(
@@ -35,7 +37,7 @@ export class APIClient {
   ): Promise<TypedResponse> {
     const response = await fetch(`${this.baseUrl}${path}`, {
       headers: {
-        ...this.headers,
+        ...(await this.headers()),
         ...options.headers,
         ...(options.body?.type === "form-urlencoded" && {
           "Content-Type": "application/x-www-form-urlencoded",
