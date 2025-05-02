@@ -44,10 +44,11 @@ const MigrationStep = z.object({
     .optional(),
 });
 
-const SingleStepMigration = MigrationStep.extend({
+export const SingleStepMigration = MigrationStep.extend({
   new_tag: z.string().optional(),
   old_tag: z.string().optional(),
 });
+export type SingleStepMigration = z.infer<typeof SingleStepMigration>;
 
 const MultipleStepMigration = z.object({
   new_tag: z.string().optional(),

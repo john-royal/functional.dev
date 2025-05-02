@@ -3,6 +3,7 @@ import { cloudflareApi } from "./src/providers/cloudflare";
 import KVNamespace from "./src/resources/kv-namespace";
 import R2Bucket from "./src/resources/r2-bucket";
 import Worker from "./src/resources/worker";
+import DurableObjectNamespace from "./src/resources/durable-object-namespace";
 
 const ctx = new Context("down");
 await cloudflareApi.init();
@@ -13,6 +14,9 @@ const kvNamespace = new KVNamespace("test-kv-namespace", {
 });
 const r2Bucket = new R2Bucket("test-r2-bucket", {
   name: "test-r2-bucket",
+});
+const durableObjectNamespace = new DurableObjectNamespace("test-do", {
+  className: "MyDurableObject",
 });
 const worker = new Worker("test-worker", {
   name: "test-worker",

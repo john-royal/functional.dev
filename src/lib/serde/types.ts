@@ -1,6 +1,8 @@
 import { Resource, ResourceStub } from "../../resource";
 import type { BundleFileProperties } from "../../resources/bundle/bundle-file";
 import { BundleFile } from "../../resources/bundle/bundle-file";
+import type { DurableObjectNamespaceProperties } from "../../resources/durable-object-namespace";
+import DurableObjectNamespace from "../../resources/durable-object-namespace";
 import type { SerializableType } from "./common";
 
 const serdeBundleFile: SerializableType<
@@ -32,6 +34,24 @@ const serdeResource: SerializableType<
   }),
   deserialize: (value) => new ResourceStub(value),
   match: (value) => value instanceof Resource,
+};
+
+const serdeDurableObject: SerializableType<
+  "durable-object",
+  DurableObjectNamespace,
+  DurableObjectNamespaceProperties
+> = {
+  kind: "durable-object",
+  serialize: (value) => ({
+    id: value.id,
+    className: value.className,
+    scriptName: value.scriptName,
+    environment: value.environment,
+    sqlite: value.sqlite,
+    namespaceId: value.namespaceId,
+  }),
+  deserialize: (value) => new DurableObjectNamespace(value.id, value),
+  match: (value) => value instanceof DurableObjectNamespace,
 };
 
 const serdeDate: SerializableType<"date", Date, string> = {
@@ -73,4 +93,5 @@ export const serdeTypes = [
   serdeSet,
   serdeUndefined,
   serdeResource,
+  serdeDurableObject,
 ];

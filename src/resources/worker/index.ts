@@ -2,10 +2,12 @@ import assert from "node:assert";
 import { cloudflareApi } from "../../providers/cloudflare";
 import { Resource } from "../../resource";
 import Bundle from "../bundle";
+import DurableObjectNamespace from "../durable-object-namespace";
 import KVNamespace from "../kv-namespace";
 import R2Bucket from "../r2-bucket";
 import WorkerAssets from "./assets";
 import {
+  type SingleStepMigration,
   type WorkerMetadataInput,
   WorkerMetadataOutput,
   type WorkersBindingKind,
@@ -17,7 +19,7 @@ interface WorkerInput {
   handler: string;
   url?: boolean;
   assets?: string;
-  bindings?: Record<string, KVNamespace | R2Bucket>;
+  bindings?: Record<string, KVNamespace | R2Bucket | DurableObjectNamespace>;
 }
 
 export default class Worker extends Resource<
@@ -101,7 +103,9 @@ export default class Worker extends Resource<
           })),
         );
         const entryPoint = artifacts.find(
-          (artifact) => artifact.kind === "entry-point",
+          (artifact) =>
+            artifact.kind === "entry-point" &&
+            artifact.name.includes(this.input.handler.replace(".ts", "")),
         );
         assert(entryPoint, "No entry point found");
         const metadata: WorkerMetadataInput = {
@@ -118,6 +122,7 @@ export default class Worker extends Resource<
               }
             : undefined,
           main_module: entryPoint.name,
+          migrations: this.resolveMigrations(context),
           observability: { enabled: true },
           compatibility_flags: ["nodejs_compat"],
           compatibility_date: "2025-05-01",
@@ -128,7 +133,7 @@ export default class Worker extends Resource<
             ...(await this.resolveBindings()),
           ],
         };
-        return putWorker(this.input.name, metadata, artifacts);
+        return await putWorker(this.input.name, metadata, artifacts);
       },
     };
   }
@@ -152,10 +157,73 @@ export default class Worker extends Resource<
               bucket_name: resource.input.name,
             };
           }
+          if (resource instanceof DurableObjectNamespace) {
+            return {
+              name,
+              type: "durable_object_namespace",
+              class_name: resource.className,
+              environment: resource.environment,
+              sqlite: resource.sqlite,
+              namespace_id: resource.namespaceId,
+              script_name: resource.scriptName,
+            };
+          }
           throw new Error(`Unsupported binding type: ${resource}`);
         },
       ),
     );
+  }
+
+  private resolveMigrations(
+    context: Resource.Context<WorkerInput, WorkerMetadataOutput>,
+  ) {
+    const migrations: SingleStepMigration = {};
+    const currentBindings = Object.values(this.input.bindings ?? {}).filter(
+      (binding) => binding instanceof DurableObjectNamespace,
+    );
+    const existingBindings = Object.values(
+      context.input?.bindings ?? {},
+    ).filter((binding) => binding instanceof DurableObjectNamespace);
+    for (const binding of currentBindings) {
+      const existing = existingBindings.find(
+        (existingBinding) => existingBinding.id === binding.id,
+      );
+      if (existing) {
+        if (binding.className !== existing.className) {
+          migrations.renamed_classes = (
+            migrations.renamed_classes ?? []
+          ).concat({
+            from: existing.className,
+            to: binding.className,
+          });
+        }
+        continue;
+      }
+      if (binding.sqlite) {
+        migrations.new_sqlite_classes = (
+          migrations.new_sqlite_classes ?? []
+        ).concat(binding.className);
+      } else {
+        migrations.new_classes = (migrations.new_classes ?? []).concat(
+          binding.className,
+        );
+      }
+    }
+    for (const binding of existingBindings) {
+      const current = currentBindings.find(
+        (currentBinding) => currentBinding.id === binding.id,
+      );
+      if (current) {
+        continue;
+      }
+      migrations.deleted_classes = (migrations.deleted_classes ?? []).concat(
+        binding.className,
+      );
+    }
+    if (Object.keys(migrations).length === 0) {
+      return undefined;
+    }
+    return migrations;
   }
 }
 
