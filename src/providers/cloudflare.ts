@@ -42,17 +42,24 @@ export class CloudflareClient {
   ) {
     const res = await this.api.fetch(path, options);
     const json = await res.json();
-    const result = CloudflareResponse(responseSchema ?? z.unknown()).parse(
+    const parsed = CloudflareResponse(responseSchema ?? z.unknown()).safeParse(
       json,
     );
-    if (!res.ok || !result.success) {
+    if (!parsed.success) {
+      console.error("Failed to decode Cloudflare API response", json);
       throw new Error(
-        `Cloudflare API error (${res.status}) - ${result.errors
+        `Failed to decode Cloudflare API response: ${parsed.error}`,
+      );
+    }
+    const { data } = parsed;
+    if (!res.ok || !data.success) {
+      throw new Error(
+        `Cloudflare API error (${res.status}) - ${data.errors
           .map((error) => `${error.code}: ${error.message}`)
           .join(", ")}`,
       );
     }
-    return result.result as T;
+    return data.result as T;
   }
 
   async get<T>(
@@ -110,7 +117,7 @@ const CloudflareMessage = z.interface({
   code: z.number(),
   message: z.string(),
   get error_chain() {
-    return z.array(CloudflareMessage);
+    return z.array(CloudflareMessage).optional();
   },
 });
 type CloudflareMessage = z.infer<typeof CloudflareMessage>;

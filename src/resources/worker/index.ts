@@ -1,10 +1,15 @@
 import assert from "node:assert";
-import z from "zod";
 import { cloudflareApi } from "../../providers/cloudflare";
 import { Resource } from "../../resource";
 import Bundle from "../bundle";
-import type KVNamespace from "../kv-namespace";
+import KVNamespace from "../kv-namespace";
+import R2Bucket from "../r2-bucket";
 import WorkerAssets from "./assets";
+import {
+  type WorkerMetadataInput,
+  WorkerMetadataOutput,
+  type WorkersBindingKind,
+} from "./types";
 import WorkerURL from "./url";
 
 interface WorkerInput {
@@ -12,15 +17,13 @@ interface WorkerInput {
   handler: string;
   url?: boolean;
   assets?: string;
-  bindings?: Record<string, KVNamespace>;
+  bindings?: Record<string, KVNamespace | R2Bucket>;
 }
-
-type WorkerOutput = Record<string, string>;
 
 export default class Worker extends Resource<
   "worker",
   WorkerInput,
-  WorkerOutput
+  WorkerMetadataOutput
 > {
   readonly kind = "worker";
 
@@ -55,8 +58,8 @@ export default class Worker extends Resource<
   }
 
   async run(
-    context: Resource.Context<WorkerInput, WorkerOutput>,
-  ): Promise<Resource.Action<WorkerOutput>> {
+    context: Resource.Context<WorkerInput, WorkerMetadataOutput>,
+  ): Promise<Resource.Action<WorkerMetadataOutput>> {
     if (context.status === "delete") {
       return {
         status: "delete",
@@ -101,7 +104,7 @@ export default class Worker extends Resource<
           (artifact) => artifact.kind === "entry-point",
         );
         assert(entryPoint, "No entry point found");
-        const metadata = {
+        const metadata: WorkerMetadataInput = {
           assets: assets
             ? {
                 jwt: assets.output.jwt,
@@ -118,17 +121,47 @@ export default class Worker extends Resource<
           observability: { enabled: true },
           compatibility_flags: ["nodejs_compat"],
           compatibility_date: "2025-05-01",
-          bindings: assets ? [{ name: "ASSETS", type: "assets" }] : undefined,
+          bindings: [
+            ...(assets
+              ? [{ name: "ASSETS", type: "assets" } as WorkersBindingKind]
+              : []),
+            ...(await this.resolveBindings()),
+          ],
         };
         return putWorker(this.input.name, metadata, artifacts);
       },
     };
   }
+
+  private async resolveBindings(): Promise<WorkersBindingKind[]> {
+    return Promise.all(
+      Object.entries(this.input.bindings ?? {}).map(
+        async ([name, resource]) => {
+          if (resource instanceof KVNamespace) {
+            const output = await this.use(resource);
+            return {
+              name,
+              type: "kv_namespace",
+              namespace_id: output.output.id,
+            };
+          }
+          if (resource instanceof R2Bucket) {
+            return {
+              name,
+              type: "r2_bucket",
+              bucket_name: resource.input.name,
+            };
+          }
+          throw new Error(`Unsupported binding type: ${resource}`);
+        },
+      ),
+    );
+  }
 }
 
 const putWorker = async (
   name: string,
-  metadata: Record<string, unknown>,
+  metadata: WorkerMetadataInput,
   files: { name: string; type: string; content: string }[],
 ) => {
   const formData = new FormData();
@@ -152,7 +185,7 @@ const putWorker = async (
         type: "form",
         value: formData,
       },
-      responseSchema: z.any(),
+      responseSchema: WorkerMetadataOutput,
     },
   );
 };

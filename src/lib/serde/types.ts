@@ -1,3 +1,4 @@
+import { Resource, ResourceStub } from "../../resource";
 import type { BundleFileProperties } from "../../resources/bundle/bundle-file";
 import { BundleFile } from "../../resources/bundle/bundle-file";
 import type { SerializableType } from "./common";
@@ -15,6 +16,22 @@ const serdeBundleFile: SerializableType<
   }),
   deserialize: (value) => new BundleFile(value),
   match: (value) => value instanceof BundleFile,
+};
+
+const serdeResource: SerializableType<
+  "resource",
+  Resource<string, unknown, unknown>,
+  { kind: string; name: string; input: unknown; dependencies: string[] }
+> = {
+  kind: "resource",
+  serialize: (value) => ({
+    kind: value.kind,
+    name: value.name,
+    input: value.input,
+    dependencies: value.dependencies,
+  }),
+  deserialize: (value) => new ResourceStub(value),
+  match: (value) => value instanceof Resource,
 };
 
 const serdeDate: SerializableType<"date", Date, string> = {
@@ -55,4 +72,5 @@ export const serdeTypes = [
   serdeMap,
   serdeSet,
   serdeUndefined,
+  serdeResource,
 ];

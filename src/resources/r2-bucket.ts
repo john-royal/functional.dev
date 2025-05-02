@@ -1,6 +1,6 @@
 import z from "zod";
-import { Resource } from "../resource";
 import { cloudflareApi } from "../providers/cloudflare";
+import { Resource } from "../resource";
 
 const R2BucketStorageClass = z.enum(["Standard", "InfrequentAccess"]);
 const R2BucketJurisdiction = z.enum(["default", "eu", "fedramp"]);

@@ -12,11 +12,11 @@ export interface WorkerURLOutput {
 }
 
 export default class WorkerURL extends Resource<
-  "worker-url",
+  "worker/url",
   WorkerURLInput,
   WorkerURLOutput
 > {
-  readonly kind = "worker-url";
+  readonly kind = "worker/url";
 
   async run(
     context: Resource.Context<WorkerURLInput, WorkerURLOutput>,

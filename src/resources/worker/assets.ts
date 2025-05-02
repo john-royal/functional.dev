@@ -28,11 +28,11 @@ export interface WorkerAssetsOutput {
 }
 
 export default class WorkerAssets extends Resource<
-  "worker-assets",
+  "worker/assets",
   WorkerAssetsInput,
   WorkerAssetsOutput
 > {
-  readonly kind = "worker-assets";
+  readonly kind = "worker/assets";
 
   async run(
     context: Resource.Context<WorkerAssetsInput, WorkerAssetsOutput>,

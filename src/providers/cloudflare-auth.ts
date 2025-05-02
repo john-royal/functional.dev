@@ -98,7 +98,8 @@ class WranglerConfigProvider {
       "config",
       "default.toml",
     );
-    return Bun.file(configPath);
+    this.file = Bun.file(configPath);
+    return this.file;
   }
 
   async refresh(token: string): Promise<WranglerConfig> {

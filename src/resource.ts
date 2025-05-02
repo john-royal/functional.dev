@@ -29,6 +29,35 @@ export abstract class Resource<TKind extends string, TInput, TOutput> {
     return this.context.waitFor(resource);
   }
 }
+
+export interface ResourceProperties {
+  kind: string;
+  name: string;
+  input: unknown;
+  dependencies: string[];
+}
+
+export class ResourceStub extends Resource<string, unknown, unknown> {
+  readonly kind: string;
+  constructor(properties: ResourceProperties) {
+    super(
+      properties.name,
+      properties.input,
+      {
+        dependencies: properties.dependencies,
+      },
+      {
+        register: () => {},
+      } as unknown as Context,
+    );
+    this.kind = properties.kind;
+  }
+
+  run(): Resource.Action<unknown> {
+    throw new Error("Not implemented");
+  }
+}
+
 export namespace Resource {
   export interface CreateAction<T> {
     status: "create";
