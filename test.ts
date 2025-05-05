@@ -10,10 +10,10 @@ const app = new App({
   name: "test",
   cwd: process.cwd(),
 });
+appStorage.enterWith(app);
 console.time("init");
 await app.init();
 console.timeEnd("init");
-appStorage.enterWith(app);
 
 const kvNamespace = new KVNamespace("test-kv-namespace", {
   title: "test-kv-namespace",

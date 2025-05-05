@@ -1,23 +1,29 @@
 import path from "node:path";
-import sha256 from "../../lib/sha256";
+import { $app } from "~/core/app";
+import sha256 from "~/lib/sha256";
 
 export interface BundleFileProperties {
   name: string;
   hash: string;
   kind: Bun.BuildArtifact["kind"];
+  directory: string;
 }
 
 export class BundleFile implements BundleFileProperties {
   readonly name: string;
   readonly hash: string;
   readonly kind: Bun.BuildArtifact["kind"];
+  readonly directory: string;
   private readonly file: Bun.BunFile;
 
   constructor(properties: BundleFileProperties) {
     this.name = properties.name;
     this.hash = properties.hash;
     this.kind = properties.kind;
-    this.file = Bun.file(path.join(process.cwd(), properties.name));
+    this.directory = properties.directory;
+    this.file = Bun.file(
+      $app.path.scope(properties.directory, properties.name),
+    );
   }
 
   get type() {
@@ -28,7 +34,14 @@ export class BundleFile implements BundleFileProperties {
 
   bytes = async () => this.file.bytes();
 
-  static async fromBuildArtifact(artifact: Bun.BuildArtifact) {
+  toJSON = () => ({
+    name: this.name,
+    hash: this.hash,
+    kind: this.kind,
+    directory: this.directory,
+  });
+
+  static async fromBuildArtifact(outdir: string, artifact: Bun.BuildArtifact) {
     const bytes = await Bun.file(artifact.path)
       .bytes()
       .catch(() => undefined);
@@ -36,9 +49,10 @@ export class BundleFile implements BundleFileProperties {
       throw new Error(`Failed to read artifact ${artifact.path}`);
     }
     return new BundleFile({
-      name: path.relative(process.cwd(), artifact.path),
+      name: path.relative(outdir, artifact.path),
       hash: sha256(bytes),
       kind: artifact.kind,
+      directory: $app.path.unscope(outdir),
     });
   }
 }

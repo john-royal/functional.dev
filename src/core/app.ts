@@ -1,4 +1,3 @@
-import assert from "node:assert";
 import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
 import { CloudflareClient } from "~/providers/cloudflare";
@@ -35,9 +34,14 @@ export class App implements AppProperties {
   }
 
   async init() {
-    await Promise.all([this.cache.loadPromise, this.state.loadPromise]);
+    await Promise.all([this.cache.load(), this.state.load()]);
     await this.providers.cloudflare.init();
   }
+
+  path = {
+    scope: (...paths: string[]) => path.join(this.out, ...paths),
+    unscope: (input: string) => path.relative(this.out, input),
+  };
 
   register<T extends Resource.Properties>(resource: Resource<T>) {
     if (this.resources.has(resource.name)) {
@@ -56,7 +60,11 @@ export const appStorage = new AsyncLocalStorage<App>();
 export const $app = new Proxy({} as App, {
   get: (_, prop: keyof App) => {
     const app = appStorage.getStore();
-    assert(app, "register must be called inside an App");
+    if (!app) {
+      const error = new Error("$app must be called inside an App");
+      Error.captureStackTrace(error);
+      throw error;
+    }
     return app[prop];
   },
 });

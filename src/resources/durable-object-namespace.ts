@@ -26,4 +26,13 @@ export default class DurableObjectNamespace
     this.sqlite = properties.sqlite;
     this.namespaceId = properties.namespaceId;
   }
+
+  toJSON = () => ({
+    id: this.id,
+    className: this.className,
+    scriptName: this.scriptName,
+    environment: this.environment,
+    sqlite: this.sqlite,
+    namespaceId: this.namespaceId,
+  });
 }

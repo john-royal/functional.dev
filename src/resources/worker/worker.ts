@@ -55,7 +55,7 @@ export class Worker extends Resource<WorkerProperties> {
     const bundle = new Bundle(`${name}.bundle`, {
       entrypoints: [input.handler],
       sourcemap: "none",
-      outdir: "dist",
+      outdir: name,
       format: "esm",
     });
     const assets = input.assets

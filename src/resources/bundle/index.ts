@@ -1,11 +1,13 @@
 import { rmdir } from "node:fs/promises";
+import { $app } from "~/core/app";
+import type { WithRequired } from "~/lib/types";
 import { Resource } from "../../core/resource";
 import { haveFilesChanged } from "../../lib/file";
 import { BundleFile } from "./bundle-file";
 import { TraceInputPlugin } from "./plugins";
 
 type BundleResourceProperties = Resource.CRUDProperties<
-  Bun.BuildConfig,
+  WithRequired<Bun.BuildConfig, "outdir">,
   BundleOutput
 >;
 
@@ -19,7 +21,7 @@ export class Bundle extends Resource<BundleResourceProperties> {
 
   constructor(
     name: string,
-    input: Bun.BuildConfig,
+    input: WithRequired<Bun.BuildConfig, "outdir">,
     metadata?: Resource.Metadata,
   ) {
     super(new BundleProvider(), name, input, metadata);
@@ -50,22 +52,29 @@ class BundleProvider implements Resource.Provider<BundleResourceProperties> {
   };
 
   delete = async (state: Resource.State<BundleResourceProperties>) => {
-    if (state.input.outdir) {
-      await rmdir(state.input.outdir, { recursive: true });
-    }
+    await rmdir($app.path.scope(state.input.outdir), {
+      recursive: true,
+    });
     return;
   };
 
-  run = async (input: Bun.BuildConfig): Promise<BundleOutput> => {
+  run = async (
+    input: Resource.Input<BundleResourceProperties>,
+  ): Promise<BundleOutput> => {
+    const outdir = $app.path.scope(input.outdir);
+    console.log("outdir", outdir);
     const traceInputPlugin = new TraceInputPlugin();
     const result = await Bun.build({
       ...input,
+      outdir,
       plugins: [...(input.plugins ?? []), traceInputPlugin],
     });
     const [sources, artifacts] = await Promise.all([
       traceInputPlugin.getManifest(),
       Promise.all(
-        result.outputs.map((output) => BundleFile.fromBuildArtifact(output)),
+        result.outputs.map((output) =>
+          BundleFile.fromBuildArtifact(outdir, output),
+        ),
       ),
     ]);
     return {

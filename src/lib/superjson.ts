@@ -3,27 +3,16 @@ import {
   BundleFile,
   type BundleFileProperties,
 } from "~/resources/bundle/bundle-file";
-import DurableObjectNamespace from "~/resources/durable-object-namespace";
+import DurableObjectNamespace, {
+  type DurableObjectNamespaceProperties,
+} from "~/resources/durable-object-namespace";
 
 superjson.registerCustom(
   {
     isApplicable: (value: unknown) => value instanceof DurableObjectNamespace,
-    serialize: (value: DurableObjectNamespace) => ({
-      id: value.id,
-      className: value.className,
-      scriptName: value.scriptName,
-      environment: value.environment,
-      sqlite: value.sqlite,
-      namespaceId: value.namespaceId,
-    }),
-    deserialize: (value: {
-      id: string;
-      className: string;
-      scriptName?: string;
-      environment?: string;
-      sqlite?: boolean;
-      namespaceId?: string;
-    }) => new DurableObjectNamespace(value.id, value),
+    serialize: (value: DurableObjectNamespace) => value.toJSON(),
+    deserialize: (value: DurableObjectNamespaceProperties) =>
+      new DurableObjectNamespace(value.id, value),
   },
   "DurableObjectNamespace",
 );
@@ -31,11 +20,7 @@ superjson.registerCustom(
 superjson.registerCustom(
   {
     isApplicable: (value: unknown) => value instanceof BundleFile,
-    serialize: (value: BundleFile) => ({
-      name: value.name,
-      hash: value.hash,
-      kind: value.kind,
-    }),
+    serialize: (value: BundleFile) => value.toJSON(),
     deserialize: (value: BundleFileProperties) => new BundleFile(value),
   },
   "BundleFile",
