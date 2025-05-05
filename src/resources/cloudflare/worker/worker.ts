@@ -17,7 +17,8 @@ export interface WorkerInput {
   assets?: string;
   bindings?: Record<
     string,
-    Resource<Resource.Properties> | DurableObjectNamespace | WorkersBindingKind
+    // biome-ignore lint/suspicious/noExplicitAny: required for binding types
+    Resource<any> | DurableObjectNamespace | WorkersBindingKind
   >;
 }
 
@@ -107,6 +108,8 @@ export default class Worker extends Resource<WorkerProperties> {
       });
     }
 
+    void this.generateTypes(bindings);
+
     return {
       name: this.input.name,
       assets,
@@ -116,6 +119,51 @@ export default class Worker extends Resource<WorkerProperties> {
       bindings,
       bundle,
     };
+  }
+
+  private async generateTypes(bindings: WorkersBindingKind[]) {
+    const types = {
+      kv_namespace: "KVNamespace",
+      durable_object_namespace: "DurableObjectNamespace",
+      hyperdrive: "HyperdriveConfig",
+      r2_bucket: "R2Bucket",
+      plain_text: "string",
+      secret_text: "string",
+
+      json: "unknown",
+      ai: "unknown",
+      analytics_engine: "unknown",
+      assets: "unknown",
+      browser_rendering: "unknown",
+      d1: "unknown",
+      dispatch_namespace: "unknown",
+      mtls_certificate: "unknown",
+      pipelines: "unknown",
+      queue: "unknown",
+      service: "unknown",
+      tail_consumer: "unknown",
+      vectorize: "unknown",
+      version_metadata: "unknown",
+      secrets_store_secret: "unknown",
+      secret_key: "unknown",
+    };
+    const typeDefinition = [
+      '/// <reference types="@cloudflare/workers-types" />',
+      "",
+      "interface CloudflareEnv {",
+      ...bindings.map((binding) => {
+        const type = types[binding.type];
+        return `  ${binding.name}: ${type};`;
+      }),
+      "}",
+      "",
+      'declare module "cloudflare:workers" {',
+      "  interface Env extends CloudflareEnv {}",
+      "}",
+      "",
+      "type Env = CloudflareEnv;",
+    ];
+    await Bun.write("env.d.ts", typeDefinition.join("\n"));
   }
 
   private async resolveBindings() {

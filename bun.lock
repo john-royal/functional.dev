@@ -12,6 +12,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "^1.9.4",
+        "@cloudflare/workers-types": "^4.20250505.0",
         "@types/bun": "latest",
       },
       "peerDependencies": {
@@ -40,6 +41,8 @@
     "@biomejs/cli-win32-arm64": ["@biomejs/cli-win32-arm64@1.9.4", "", { "os": "win32", "cpu": "arm64" }, "sha512-tlbhLk+WXZmgwoIKwHIHEBZUwxml7bRJgk0X2sPyNR3S93cdRq6XulAZRQJ17FYGGzWne0fgrXBKpl7l4M87Hg=="],
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@1.9.4", "", { "os": "win32", "cpu": "x64" }, "sha512-8Y5wMhVIPaWe6jw2H+KlEm4wP/f7EW3810ZLmDlrEEy5KvBsb9ECEfu/kMWD484ijfQ8+nIi0giMgu9g1UAuuA=="],
+
+    "@cloudflare/workers-types": ["@cloudflare/workers-types@4.20250505.0", "", {}, "sha512-pLQ/UaCupEy3fTTfy7yCR7FuAbawvCohYAdadGHPUfzssksA9MhkqBLlzYWRwIoC34R8grVn4XOCknEg+NMr0Q=="],
 
     "@iarna/toml": ["@iarna/toml@2.2.5", "", {}, "sha512-trnsAYxU3xnS1gPHPyU961coFyLkh4gAD/0zQ5mymY4yOZ+CYvsPqUbOFSw0aDM4y0tV7tiFxL/1XfXPNC6IPg=="],
 
