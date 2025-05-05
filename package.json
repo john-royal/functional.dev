@@ -1,6 +1,6 @@
 {
   "name": "functional-monorepo",
-  "packageManager": "bun@1.2.10",
+  "packageManager": "bun@1.2.12",
   "private": true,
   "type": "module",
   "scripts": {
