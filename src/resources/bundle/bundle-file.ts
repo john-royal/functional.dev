@@ -20,6 +20,10 @@ export class BundleFile implements BundleFileProperties {
     this.file = Bun.file(path.join(process.cwd(), properties.name));
   }
 
+  get type() {
+    return this.file.type;
+  }
+
   text = async () => this.file.text();
 
   bytes = async () => this.file.bytes();

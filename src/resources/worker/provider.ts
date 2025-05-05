@@ -1,9 +1,14 @@
 import assert from "node:assert";
 import z from "zod";
+import { $cloudflare } from "~/core/app";
 import type { Resource } from "../../core/resource";
-import { cloudflareApi } from "../../providers/cloudflare";
+import type DurableObjectNamespace from "../durable-object-namespace";
 import type { WorkerAssetsManifest } from "./assets";
-import { type WorkerMetadataInput, WorkerMetadataOutput } from "./types";
+import {
+  type SingleStepMigration,
+  type WorkerMetadataInput,
+  WorkerMetadataOutput,
+} from "./types";
 import type { WorkerProperties } from "./worker";
 
 export class WorkerProvider implements Resource.Provider<WorkerProperties> {
@@ -18,28 +23,38 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
     input: Resource.Input<WorkerProperties>,
     state: Resource.State<WorkerProperties>,
   ): Promise<Resource.Diff> {
-    console.log("diff", input, state);
     if (!Bun.deepEquals(input, state.input)) {
       return "update";
     }
     return "none";
   }
 
-  async update(input: Resource.Input<WorkerProperties>) {
-    return await this.put(input);
+  async update(
+    input: Resource.Input<WorkerProperties>,
+    state: Resource.State<WorkerProperties>,
+  ) {
+    return await this.put(input, state);
   }
 
   async delete(state: Resource.State<WorkerProperties>) {
-    await cloudflareApi.delete(
-      `/accounts/${cloudflareApi.accountId}/workers/scripts/${state.providerId}`,
+    await $cloudflare.delete(
+      `/accounts/${$cloudflare.accountId}/workers/scripts/${state.providerId}`,
     );
   }
 
   private async put(
     input: Resource.Input<WorkerProperties>,
+    state?: Resource.State<WorkerProperties>,
   ): Promise<WorkerMetadataOutput> {
+    const entry = input.bundle.find((file) => file.kind === "entry-point");
+    assert(entry, "No entry point found");
     const metadata: WorkerMetadataInput = {
-      ...input.metadata,
+      main_module: entry.name,
+      bindings: input.bindings,
+      migrations: this.resolveMigrations(
+        input.durableObjectNamespaces ?? [],
+        state,
+      ),
     };
     if (input.assets) {
       const jwt = await this.uploadAssets(input.name, input.assets.manifest);
@@ -51,8 +66,6 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
         },
       };
     }
-    console.log("Uploading worker", metadata);
-    console.log("Uploading files", input.files);
     const formData = new FormData();
     formData.append(
       "metadata",
@@ -60,15 +73,16 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
         type: "application/json",
       }),
     );
-    for (const file of input.files) {
+    for (const file of input.bundle) {
       formData.append(
         file.name,
-        new Blob([file.content], { type: file.type }),
-        file.name,
+        new File([await file.text()], file.name, {
+          type: "application/javascript+module",
+        }),
       );
     }
-    return await cloudflareApi.put(
-      `/accounts/${cloudflareApi.accountId}/workers/scripts/${input.name}`,
+    return await $cloudflare.put(
+      `/accounts/${$cloudflare.accountId}/workers/scripts/${input.name}`,
       {
         body: {
           type: "form",
@@ -79,12 +93,57 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
     );
   }
 
+  private resolveMigrations(
+    durableObjectNamespaces: DurableObjectNamespace[],
+    state?: Resource.State<WorkerProperties>,
+  ) {
+    const migrations: SingleStepMigration = {};
+    const existingObjects = state?.input.durableObjectNamespaces ?? [];
+    for (const binding of durableObjectNamespaces) {
+      const existing = existingObjects.find(
+        (existingBinding) => existingBinding.id === binding.id,
+      );
+      if (existing) {
+        if (binding.className !== existing.className) {
+          migrations.renamed_classes = (
+            migrations.renamed_classes ?? []
+          ).concat({
+            from: existing.className,
+            to: binding.className,
+          });
+        }
+        continue;
+      }
+      if (binding.sqlite) {
+        migrations.new_sqlite_classes = (
+          migrations.new_sqlite_classes ?? []
+        ).concat(binding.className);
+      } else {
+        migrations.new_classes = (migrations.new_classes ?? []).concat(
+          binding.className,
+        );
+      }
+    }
+    for (const binding of existingObjects) {
+      const current = durableObjectNamespaces.find(
+        (currentBinding) => currentBinding.id === binding.id,
+      );
+      if (current) {
+        continue;
+      }
+      migrations.deleted_classes = (migrations.deleted_classes ?? []).concat(
+        binding.className,
+      );
+    }
+    return Object.keys(migrations).length === 0 ? undefined : migrations;
+  }
+
   private async uploadAssets(
     scriptName: string,
     manifest: WorkerAssetsManifest,
   ) {
-    const uploadSessionResponse = await cloudflareApi.post(
-      `/accounts/${cloudflareApi.accountId}/workers/scripts/${scriptName}/assets-upload-session`,
+    const uploadSessionResponse = await $cloudflare.post(
+      `/accounts/${$cloudflare.accountId}/workers/scripts/${scriptName}/assets-upload-session`,
       {
         body: {
           type: "json",
@@ -122,8 +181,8 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
             );
           }),
         );
-        const res = await cloudflareApi.post(
-          `/accounts/${cloudflareApi.accountId}/workers/assets/upload?base64=true`,
+        const res = await $cloudflare.post(
+          `/accounts/${$cloudflare.accountId}/workers/assets/upload?base64=true`,
           {
             headers: {
               Authorization: `Bearer ${uploadSessionResponse.jwt}`,

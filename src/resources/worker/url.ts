@@ -1,6 +1,6 @@
 import z from "zod";
+import { $cloudflare } from "~/core/app";
 import { Resource } from "../../core/resource";
-import { cloudflareApi } from "../../providers/cloudflare";
 
 export interface WorkerURLInput {
   scriptName: string;
@@ -12,9 +12,9 @@ export interface WorkerURLOutput {
 }
 
 export type WorkerURLProperties = Resource.CRUDProperties<
-  string,
   WorkerURLInput,
-  WorkerURLOutput
+  WorkerURLOutput,
+  string
 >;
 
 export class WorkerURLProvider
@@ -57,8 +57,8 @@ export class WorkerURLProvider
   }
 
   private async getSubdomain() {
-    const res = await cloudflareApi.get(
-      `/accounts/${cloudflareApi.accountId}/workers/subdomain`,
+    const res = await $cloudflare.get(
+      `/accounts/${$cloudflare.accountId}/workers/subdomain`,
       {
         responseSchema: z.object({
           subdomain: z.string(),
@@ -69,8 +69,8 @@ export class WorkerURLProvider
   }
 
   private async put(input: WorkerURLInput): Promise<void> {
-    await cloudflareApi.post(
-      `/accounts/${cloudflareApi.accountId}/workers/scripts/${input.scriptName}/subdomain`,
+    await $cloudflare.post(
+      `/accounts/${$cloudflare.accountId}/workers/scripts/${input.scriptName}/subdomain`,
       {
         body: {
           type: "json",

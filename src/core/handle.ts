@@ -2,8 +2,8 @@ import assert from "node:assert";
 import { DetachedPromise } from "../lib/detached-promise";
 import { groupByDependencies } from "../lib/group";
 import type { App } from "./app";
+import { useResourceOutputStorage } from "./output";
 import type { Resource } from "./resource";
-import { useOutputStorage } from "./use-output";
 
 export class LifecycleHandler {
   handles = new Map<string, ResourceHandle>();
@@ -17,7 +17,7 @@ export class LifecycleHandler {
   }
 
   async up() {
-    return await useOutputStorage.run(this, () => this.upInternal());
+    return await useResourceOutputStorage.run(this, () => this.upInternal());
   }
 
   async down() {
@@ -91,12 +91,12 @@ export class ResourceHandle<
   }
 
   async up() {
-    const state = await this.app.store.get<SerializedResourceState<T>>(
+    const state = await this.app.state.get<SerializedResourceState<T>>(
       this.resource.name,
     );
     if (state) {
       const diff = await this.resource.provider.diff(
-        await this.resource.getDerivedInput(state),
+        await this.resource.getDerivedInput(),
         state,
       );
       switch (diff) {
@@ -139,7 +139,7 @@ export class ResourceHandle<
   }
 
   async down() {
-    const state = await this.app.store.get<SerializedResourceState<T>>(
+    const state = await this.app.state.get<SerializedResourceState<T>>(
       this.resource.name,
     );
     if (!state) {
@@ -149,7 +149,7 @@ export class ResourceHandle<
       action: "delete",
       apply: async () => {
         await this.delete(state);
-        await this.app.store.delete(this.resource.name);
+        await this.app.state.delete(this.resource.name);
       },
     };
   }
@@ -159,7 +159,7 @@ export class ResourceHandle<
     const { providerId, output: rawOutput } =
       await this.resource.provider.create(input);
     const output = await this.resource.getDerivedOutput(rawOutput);
-    await this.app.store.set(this.resource.name, {
+    await this.app.state.set(this.resource.name, {
       providerId,
       input,
       output,
@@ -175,10 +175,10 @@ export class ResourceHandle<
         `Resource ${this.resource.name} does not support updates`,
       );
     }
-    const input = await this.resource.getDerivedInput(state);
+    const input = await this.resource.getDerivedInput();
     const rawOutput = await this.resource.provider.update(input, state);
     const output = await this.resource.getDerivedOutput(rawOutput);
-    await this.app.store.set(this.resource.name, {
+    await this.app.state.set(this.resource.name, {
       providerId: state.providerId,
       input,
       output,
@@ -192,6 +192,6 @@ export class ResourceHandle<
     if (this.resource.provider.delete) {
       await this.resource.provider.delete(state);
     }
-    await this.app.store.delete(this.resource.name);
+    await this.app.state.delete(this.resource.name);
   }
 }

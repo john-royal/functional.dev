@@ -1,6 +1,6 @@
 import z from "zod";
+import { $cloudflare } from "~/core/app";
 import { Resource } from "../core/resource";
-import { cloudflareApi } from "../providers/cloudflare";
 
 const R2BucketStorageClass = z.enum(["Standard", "InfrequentAccess"]);
 const R2BucketJurisdiction = z.enum(["default", "eu", "fedramp"]);
@@ -27,15 +27,15 @@ export const R2BucketOutput = z.object({
 export type R2BucketOutput = z.infer<typeof R2BucketOutput>;
 
 type R2BucketProperties = Resource.CRUDProperties<
-  string,
   R2BucketInput,
-  R2BucketOutput
+  R2BucketOutput,
+  string
 >;
 
 export const r2BucketProvider: Resource.Provider<R2BucketProperties> = {
   create: async (input) => {
-    const res = await cloudflareApi.post(
-      `/accounts/${cloudflareApi.accountId}/r2/buckets`,
+    const res = await $cloudflare.post(
+      `/accounts/${$cloudflare.accountId}/r2/buckets`,
       {
         headers: {
           "cf-r2-jurisdiction": input.jurisdiction ?? "default",
@@ -63,8 +63,8 @@ export const r2BucketProvider: Resource.Provider<R2BucketProperties> = {
     return "none";
   },
   delete: async (state) => {
-    await cloudflareApi.delete(
-      `/accounts/${cloudflareApi.accountId}/r2/buckets/${state.providerId}`,
+    await $cloudflare.delete(
+      `/accounts/${$cloudflare.accountId}/r2/buckets/${state.providerId}`,
     );
   },
 };

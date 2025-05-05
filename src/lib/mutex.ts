@@ -14,7 +14,6 @@ export class Mutex {
       };
 
       if (!this._locked) {
-        console.log("acquiring mutex");
         this._locked = true;
         resolve(release);
       } else {

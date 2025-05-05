@@ -3,7 +3,6 @@ import path from "node:path";
 import Ignore from "ignore";
 import { Resource } from "../../core/resource";
 import sha256 from "../../lib/sha256";
-import type { UnsetMarker } from "../../lib/types";
 
 export interface WorkerAssetsInput {
   scriptName: string;
@@ -25,7 +24,6 @@ export interface WorkerAssetsOutput {
 }
 
 export type WorkerAssetsProperties = Resource.CRUDProperties<
-  UnsetMarker,
   WorkerAssetsInput,
   WorkerAssetsOutput
 >;

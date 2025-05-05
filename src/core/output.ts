@@ -2,13 +2,14 @@ import assert from "node:assert";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Resource } from "./resource";
 
-interface UseOutputProvider {
+interface UseResourceOutputProvider {
   use<T extends Resource.Properties>(
     resource: Resource<T>,
   ): Promise<Resource.Output<T>>;
 }
 
-export const useOutputStorage = new AsyncLocalStorage<UseOutputProvider>();
+export const useResourceOutputStorage =
+  new AsyncLocalStorage<UseResourceOutputProvider>();
 
 export function useResourceOutput<T extends Resource.Properties>(
   resource: Resource<T>,
@@ -24,7 +25,7 @@ export function useResourceOutput<T extends Resource.Properties>(
   if (!resource) {
     return Promise.resolve(undefined);
   }
-  const provider = useOutputStorage.getStore();
+  const provider = useResourceOutputStorage.getStore();
   assert(
     provider,
     "useResourceOutput must be called inside a LifecycleHandler",

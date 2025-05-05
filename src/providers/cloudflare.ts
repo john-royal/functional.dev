@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { IStore } from "~/lib/store";
 import { APIClient, type FetchOptions } from "../lib/api";
 import { CloudflareAuth } from "./cloudflare-auth";
 
@@ -15,7 +16,10 @@ export class CloudflareClient {
   auth: CloudflareAuth;
   accountId?: string;
 
-  constructor(options: CloudflareClientOptions) {
+  constructor(
+    options: CloudflareClientOptions,
+    private readonly cache: IStore,
+  ) {
     this.auth = new CloudflareAuth();
     this.api = new APIClient("https://api.cloudflare.com/client/v4", () =>
       this.auth.get(),
@@ -24,8 +28,17 @@ export class CloudflareClient {
   }
 
   async init() {
-    if (this.accountId) {
-      return;
+    const [accountId] = await Promise.all([
+      this.getAccountId(),
+      this.auth.get(),
+    ]);
+    this.accountId = accountId;
+  }
+
+  private async getAccountId() {
+    const accountId = await this.cache.get<string>("cloudflare:accountId");
+    if (accountId) {
+      return accountId;
     }
     const accounts = await this.get("/accounts", {
       responseSchema: z.array(z.object({ id: z.string() })),
@@ -33,7 +46,9 @@ export class CloudflareClient {
     if (!accounts[0]) {
       throw new Error("No accounts found");
     }
-    this.accountId = accounts[0].id;
+    const newAccountId = accounts[0].id;
+    await this.cache.set("cloudflare:accountId", newAccountId);
+    return newAccountId;
   }
 
   async fetch<T = unknown>(
@@ -143,7 +158,3 @@ type CloudflareSuccessResponse<T> = z.infer<
 const CloudflareResponse = <T>(result: z.ZodType<T>) =>
   z.union([CloudflareSuccessResponse(result), CloudflareErrorResponse]);
 type CloudflareResponse<T> = z.infer<ReturnType<typeof CloudflareResponse<T>>>;
-
-export const cloudflareApi = new CloudflareClient({
-  accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
-});

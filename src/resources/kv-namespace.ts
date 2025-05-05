@@ -1,6 +1,6 @@
 import z from "zod";
-import { Resource } from "../core/resource";
-import { cloudflareApi } from "../providers/cloudflare";
+import { $cloudflare } from "~/core/app";
+import { Resource } from "~/core/resource";
 
 export const KVNamespaceInput = z.object({
   title: z.string(),
@@ -16,15 +16,15 @@ export const KVNamespaceOutput = z.object({
 export type KVNamespaceOutput = z.infer<typeof KVNamespaceOutput>;
 
 export type KVNamespaceProperties = Resource.CRUDProperties<
-  string,
   KVNamespaceInput,
-  KVNamespaceOutput
+  KVNamespaceOutput,
+  string
 >;
 
 export const kvNamespaceProvider: Resource.Provider<KVNamespaceProperties> = {
   create: async (input) => {
-    const res = await cloudflareApi.post(
-      `/accounts/${cloudflareApi.accountId}/storage/kv/namespaces`,
+    const res = await $cloudflare.post(
+      `/accounts/${$cloudflare.accountId}/storage/kv/namespaces`,
       {
         body: {
           type: "json",
@@ -47,8 +47,8 @@ export const kvNamespaceProvider: Resource.Provider<KVNamespaceProperties> = {
     return "none";
   },
   delete: async (state) => {
-    await cloudflareApi.delete(
-      `/accounts/${cloudflareApi.accountId}/storage/kv/namespaces/${state.providerId}`,
+    await $cloudflare.delete(
+      `/accounts/${$cloudflare.accountId}/storage/kv/namespaces/${state.providerId}`,
     );
   },
 };

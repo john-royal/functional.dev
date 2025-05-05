@@ -42,14 +42,15 @@ export class CloudflareAuth {
     }
   }
 
-  get(): Promise<Record<string, string>> {
+  async get(): Promise<Record<string, string>> {
     switch (this.value.type) {
       case "headers":
-        return Promise.resolve(this.value.headers);
+        return this.value.headers;
       case "wrangler": {
-        return this.value.provider.get().then((token) => ({
+        const token = await this.value.provider.get();
+        return {
           Authorization: `Bearer ${token}`,
-        }));
+        };
       }
     }
   }
@@ -75,22 +76,28 @@ class WranglerConfigProvider {
 
   async read(): Promise<WranglerConfig> {
     if (this.config) {
-      return Promise.resolve(this.config);
+      return this.config;
     }
-    return this.getFile()
-      .then((file) => file.text())
-      .then((text) => toml.parse(text.replace(/\r\n/g, "\n")))
-      .then((config) => WranglerConfig.parse(config));
+    const file = await this.getFile();
+    const text = await file.text().catch(() => {
+      throw new Error(
+        "Wrangler config file not found. Please run `wrangler login`.",
+      );
+    });
+    const config = toml.parse(text.replace(/\r\n/g, "\n"));
+    this.config = WranglerConfig.parse(config);
+    return this.config;
   }
 
-  write(config: WranglerConfig) {
+  async write(config: WranglerConfig) {
     this.config = config;
-    return this.getFile().then((file) => file.write(toml.stringify(config)));
+    const file = await this.getFile();
+    return file.write(toml.stringify(config));
   }
 
   async getFile(): Promise<Bun.BunFile> {
     if (this.file) {
-      return Promise.resolve(this.file);
+      return this.file;
     }
     const legacy = await Bun.file(config.WRANGLER_DIR_LEGACY).exists();
     const configPath = path.join(

@@ -1,5 +1,5 @@
 import type { UnsetMarker } from "../lib/types";
-import { register } from "./app";
+import { $app } from "./app";
 
 export type AnyResource = Resource<Resource.Properties>;
 
@@ -14,10 +14,10 @@ export abstract class Resource<T extends Resource.Properties> {
       dependsOn: [],
     },
   ) {
-    register(this);
+    $app.register(this);
   }
 
-  getDerivedInput(state?: Resource.State<T>): Promise<T["input"]["out"]> {
+  getDerivedInput(): Promise<T["input"]["out"]> {
     return Promise.resolve(this.input as T["input"]["out"]);
   }
 
@@ -49,7 +49,8 @@ export namespace Resource {
     updatedAt: number;
   }
 
-  export interface CRUDProperties<TID, TInput, TOutput> extends Properties {
+  export interface CRUDProperties<TInput, TOutput, TID = UnsetMarker>
+    extends Properties {
     input: { in: TInput; out: TInput };
     output: { providerId: TID; in: TOutput; out: TOutput };
   }
@@ -65,21 +66,19 @@ export namespace Resource {
     T extends Properties,
     U,
   > = T["output"]["providerId"] extends UnsetMarker
-    ? U
+    ? U & {
+        providerId?: undefined;
+      }
     : U & {
         providerId: T["output"]["providerId"];
       };
 
-  type CreateResult<T extends Properties> =
-    T["output"]["providerId"] extends UnsetMarker
-      ? {
-          output: T["output"]["in"];
-          providerId?: undefined;
-        }
-      : {
-          output: T["output"]["in"];
-          providerId: T["output"]["providerId"];
-        };
+  export type CreateResult<T extends Properties> = WithProviderID<
+    T,
+    {
+      output: T["output"]["in"];
+    }
+  >;
 
   export type State<T extends Properties> = WithProviderID<
     T,
