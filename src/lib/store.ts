@@ -18,8 +18,8 @@ export class JSONStore implements IStore {
     this.file = Bun.file(path);
   }
 
-  async entries(): Promise<[string, unknown][]> {
-    return Object.entries(this.state);
+  async entries<T>(): Promise<[string, T][]> {
+    return Object.entries(this.state) as [string, T][];
   }
 
   async get<T>(key: string): Promise<T | undefined> {

@@ -1,6 +1,6 @@
 import z from "zod";
 import { $cloudflare } from "~/core/app";
-import { Resource } from "../../core/resource";
+import { Resource } from "~/core/resource";
 
 export interface WorkerURLInput {
   scriptName: string;
@@ -16,6 +16,22 @@ export type WorkerURLProperties = Resource.CRUDProperties<
   WorkerURLOutput,
   string
 >;
+
+export default class WorkerURL extends Resource<WorkerURLProperties> {
+  readonly kind = "cloudflare:worker:url";
+
+  static override get provider(): Resource.Provider<WorkerURLProperties> {
+    return new WorkerURLProvider();
+  }
+
+  constructor(
+    name: string,
+    input: WorkerURLInput,
+    metadata?: Resource.Metadata,
+  ) {
+    super(WorkerURL.provider, name, input, metadata);
+  }
+}
 
 export class WorkerURLProvider
   implements Resource.Provider<WorkerURLProperties>
@@ -87,17 +103,5 @@ export class WorkerURLProvider
         ]),
       },
     );
-  }
-}
-
-export class WorkerURL extends Resource<WorkerURLProperties> {
-  readonly kind = "cloudflare:worker:url";
-
-  constructor(
-    name: string,
-    input: WorkerURLInput,
-    metadata?: Resource.Metadata,
-  ) {
-    super(new WorkerURLProvider(), name, input, metadata);
   }
 }

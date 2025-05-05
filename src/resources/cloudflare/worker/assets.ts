@@ -1,8 +1,8 @@
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 import Ignore from "ignore";
-import { Resource } from "../../core/resource";
-import sha256 from "../../lib/sha256";
+import { Resource } from "~/core/resource";
+import sha256 from "~/lib/sha256";
 
 export interface WorkerAssetsInput {
   scriptName: string;
@@ -102,7 +102,7 @@ export class WorkerAssetsProvider
   }
 }
 
-export class WorkerAssets extends Resource<WorkerAssetsProperties> {
+export default class WorkerAssets extends Resource<WorkerAssetsProperties> {
   readonly kind = "cloudflare:worker:assets";
 
   constructor(name: string, input: WorkerAssetsInput) {

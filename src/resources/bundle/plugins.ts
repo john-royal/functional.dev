@@ -1,5 +1,5 @@
 import path from "node:path";
-import { computeFileHash } from "../../lib/file";
+import { computeFileHash } from "~/lib/file";
 
 export class TraceInputPlugin implements Bun.BunPlugin {
   readonly name = "trace-input";

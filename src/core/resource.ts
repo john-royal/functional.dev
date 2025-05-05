@@ -1,10 +1,15 @@
-import type { UnsetMarker } from "../lib/types";
+import type { UnsetMarker } from "~/lib/types";
 import { $app } from "./app";
 
 export type AnyResource = Resource<Resource.Properties>;
 
 export abstract class Resource<T extends Resource.Properties> {
-  abstract readonly kind: `${T["provider"]}:${T["kind"]}`;
+  abstract readonly kind: string;
+
+  // biome-ignore lint/suspicious/noExplicitAny: required for derived class output type to satisfy Resource.Provider
+  static get provider(): Resource.Provider<any> {
+    throw new Error("Not implemented");
+  }
 
   constructor(
     readonly provider: Resource.Provider<T>,
@@ -27,21 +32,18 @@ export abstract class Resource<T extends Resource.Properties> {
 }
 
 export namespace Resource {
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  type ShutUpBiome = any;
-
   export interface Properties {
     provider: string;
     kind: string;
     name: string;
     input: {
-      in: ShutUpBiome;
-      out: ShutUpBiome;
+      in: unknown;
+      out: unknown;
     };
     output: {
-      providerId: ShutUpBiome;
-      in: ShutUpBiome;
-      out: ShutUpBiome;
+      providerId: unknown;
+      in: unknown;
+      out: unknown;
     };
     dependencies: string[];
     dependents: string[];

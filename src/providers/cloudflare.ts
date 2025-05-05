@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { IStore } from "~/lib/store";
-import { APIClient, type FetchOptions } from "../lib/api";
+import { APIClient, type FetchOptions } from "~/lib/api";
 import { CloudflareAuth } from "./cloudflare-auth";
 
 interface CloudflareClientOptions {

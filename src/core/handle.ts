@@ -17,7 +17,8 @@ export class LifecycleHandler {
   }
 
   async up() {
-    return await useResourceOutputStorage.run(this, () => this.upInternal());
+    await useResourceOutputStorage.run(this, () => this.upInternal());
+    await this.deleteStrayResources();
   }
 
   async down() {
@@ -37,6 +38,49 @@ export class LifecycleHandler {
           }
         }),
       );
+    }
+    await this.deleteStrayResources();
+  }
+
+  private async deleteStrayResources() {
+    const providers = new Map<string, Resource.Provider<Resource.Properties>>();
+    const strayResources = [];
+    for (const [name, resource] of await this.app.state.entries<
+      SerializedResourceState<Resource.Properties>
+    >()) {
+      if (!this.handles.has(name)) {
+        providers.set(
+          resource.kind,
+          await this.getResourceClass(resource).then((r) => r.provider),
+        );
+        strayResources.push(resource);
+      }
+    }
+    return await Promise.all(
+      strayResources.map(async (resource) => {
+        const provider = providers.get(resource.kind);
+        assert(provider, `Provider for ${resource.kind} not found`);
+        console.log(`Deleting stray resource ${resource.name}`);
+        await provider.delete?.(resource);
+        await this.app.state.delete(resource.name);
+      }),
+    );
+  }
+
+  private async getResourceClass(
+    state: SerializedResourceState<Resource.Properties>,
+  ) {
+    const path = state.kind.replace(/:/g, "/");
+    try {
+      const pathWithoutIndex = await import(`~/resources/${path}.ts`);
+      return pathWithoutIndex.default as {
+        provider: Resource.Provider<Resource.Properties>;
+      };
+    } catch {
+      const pathWithIndex = await import(`~/resources/${path}/index.ts`);
+      return pathWithIndex.default as {
+        provider: Resource.Provider<Resource.Properties>;
+      };
     }
   }
 

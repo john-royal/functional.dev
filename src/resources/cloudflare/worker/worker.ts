@@ -1,15 +1,14 @@
-import { useResourceOutput } from "../../core/output";
-import { Resource } from "../../core/resource";
-import { Bundle } from "../bundle";
-import type { BundleFile } from "../bundle/bundle-file";
+import { useResourceOutput } from "~/core/output";
+import { Resource } from "~/core/resource";
+import Bundle from "~/resources/bundle";
+import type { BundleFile } from "~/resources/bundle/bundle-file";
 import DurableObjectNamespace from "../durable-object-namespace";
-import { KVNamespace } from "../kv-namespace";
-import { R2Bucket } from "../r2-bucket";
-import type { WorkerAssetsOutput } from "./assets";
-import { WorkerAssets } from "./assets";
+import KVNamespace from "../kv-namespace";
+import R2Bucket from "../r2-bucket";
+import WorkerAssets, { type WorkerAssetsOutput } from "./assets";
 import { WorkerProvider } from "./provider";
 import type { WorkerMetadataOutput, WorkersBindingKind } from "./types";
-import { WorkerURL } from "./url";
+import WorkerURL from "./url";
 
 export interface WorkerInput {
   name: string;
@@ -44,8 +43,12 @@ export interface WorkerProperties extends Resource.Properties {
   };
 }
 
-export class Worker extends Resource<WorkerProperties> {
+export default class Worker extends Resource<WorkerProperties> {
   readonly kind = "cloudflare:worker";
+
+  static override get provider(): Resource.Provider<WorkerProperties> {
+    return new WorkerProvider();
+  }
 
   bundle: Bundle;
   assets?: WorkerAssets;
@@ -75,7 +78,7 @@ export class Worker extends Resource<WorkerProperties> {
       },
     );
 
-    super(new WorkerProvider(), name, input, {
+    super(Worker.provider, name, input, {
       dependsOn: [
         bundle.name,
         assets?.name,

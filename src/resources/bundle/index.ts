@@ -1,8 +1,8 @@
 import { rmdir } from "node:fs/promises";
 import { $app } from "~/core/app";
 import type { WithRequired } from "~/lib/types";
-import { Resource } from "../../core/resource";
-import { haveFilesChanged } from "../../lib/file";
+import { Resource } from "~/core/resource";
+import { haveFilesChanged } from "~/lib/file";
 import { BundleFile } from "./bundle-file";
 import { TraceInputPlugin } from "./plugins";
 
@@ -16,15 +16,19 @@ interface BundleOutput {
   artifacts: BundleFile[];
 }
 
-export class Bundle extends Resource<BundleResourceProperties> {
-  readonly kind = "functional:bundle";
+export default class Bundle extends Resource<BundleResourceProperties> {
+  readonly kind = "bundle";
+
+  static override get provider() {
+    return new BundleProvider();
+  }
 
   constructor(
     name: string,
     input: WithRequired<Bun.BuildConfig, "outdir">,
     metadata?: Resource.Metadata,
   ) {
-    super(new BundleProvider(), name, input, metadata);
+    super(Bundle.provider, name, input, metadata);
   }
 }
 

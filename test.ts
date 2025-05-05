@@ -1,8 +1,8 @@
 import { App, appStorage } from "./src/core/app";
-import DurableObjectNamespace from "./src/resources/durable-object-namespace";
-import { KVNamespace } from "./src/resources/kv-namespace";
-import { R2Bucket } from "./src/resources/r2-bucket";
-import { Worker } from "./src/resources/worker";
+import DurableObjectNamespace from "./src/resources/cloudflare/durable-object-namespace";
+import KVNamespace from "./src/resources/cloudflare/kv-namespace";
+import R2Bucket from "./src/resources/cloudflare/r2-bucket";
+import Worker from "./src/resources/cloudflare/worker";
 
 const proc = process.argv.slice(2);
 

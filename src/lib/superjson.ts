@@ -5,12 +5,13 @@ import {
 } from "~/resources/bundle/bundle-file";
 import DurableObjectNamespace, {
   type DurableObjectNamespaceProperties,
-} from "~/resources/durable-object-namespace";
+} from "~/resources/cloudflare/durable-object-namespace";
 
 superjson.registerCustom(
   {
     isApplicable: (value: unknown) => value instanceof DurableObjectNamespace,
-    serialize: (value: DurableObjectNamespace) => value.toJSON(),
+    serialize: (value: DurableObjectNamespace) =>
+      DurableObjectNamespace.toJSON(value),
     deserialize: (value: DurableObjectNamespaceProperties) =>
       new DurableObjectNamespace(value.id, value),
   },
