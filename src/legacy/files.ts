@@ -1,4 +1,4 @@
-import { computeFileHash, verifyFileHashes } from "../lib/file";
+import { computeFileHash, haveFilesChanged } from "../lib/file";
 import { Resource } from "./resource";
 
 export interface FilesInput {
@@ -19,7 +19,7 @@ export const Files = Resource<"files", FilesInput, FilesOutput>(
           apply: () => generateFileManifest(ctx.input.paths),
         };
       case "update": {
-        const changed = await verifyFileHashes(ctx.output.files);
+        const changed = await haveFilesChanged(ctx.output.files);
         if (!changed) {
           return {
             type: "none",

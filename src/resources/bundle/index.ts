@@ -1,56 +1,62 @@
 import { rmdir } from "node:fs/promises";
-import { verifyFileHashes } from "../../lib/file";
-import { Resource } from "../../resource";
+import { Resource } from "../../core/resource";
+import { haveFilesChanged } from "../../lib/file";
+import type { UnsetMarker } from "../../lib/types";
 import { BundleFile } from "./bundle-file";
 import { TraceInputPlugin } from "./plugins";
+
+type BundleResourceProperties = Resource.CRUDProperties<
+  UnsetMarker,
+  Bun.BuildConfig,
+  BundleOutput
+>;
 
 interface BundleOutput {
   inputs: Record<string, string>;
   artifacts: BundleFile[];
 }
 
-export default class Bundle extends Resource<
-  "bundle",
-  Bun.BuildConfig,
-  BundleOutput
-> {
-  readonly kind = "bundle";
-
-  async run(
-    context: Resource.Context<Bun.BuildConfig, BundleOutput>,
-  ): Promise<Resource.Action<BundleOutput>> {
-    switch (context.status) {
-      case "create":
-        return {
-          status: "create",
-          apply: () => runBuild(this.input),
-        };
-      case "update": {
-        if (
-          !Bun.deepEquals(this.input, context.input) ||
-          (await verifyFileHashes(context.output.inputs))
-        ) {
-          return {
-            status: "update",
-            apply: () => runBuild(this.input),
-          };
-        }
-        return {
-          status: "none",
-        };
-      }
-      case "delete": {
-        const outdir = context.input.outdir;
-        return {
-          status: "delete",
-          apply: outdir ? () => rmdir(outdir, { recursive: true }) : undefined,
-        };
-      }
+const bundleProvider: Resource.Provider<BundleResourceProperties> = {
+  create: async (input) => {
+    const output = await runBuild(input);
+    return {
+      output,
+    };
+  },
+  diff: async (input, state) => {
+    if (!Bun.deepEquals(state.input, input)) {
+      return "replace";
     }
+    console.log("state.output.inputs", state.output.inputs);
+    if (await haveFilesChanged(state.output.inputs)) {
+      return "update";
+    }
+    return "none";
+  },
+  update: async (input) => {
+    return await runBuild(input);
+  },
+  delete: async (context) => {
+    if (context.input.outdir) {
+      await rmdir(context.input.outdir, { recursive: true });
+    }
+    return;
+  },
+};
+
+export class Bundle extends Resource<BundleResourceProperties> {
+  readonly kind = "functional:bundle";
+
+  constructor(
+    name: string,
+    input: Bun.BuildConfig,
+    metadata?: Resource.Metadata,
+  ) {
+    super(bundleProvider, name, input, metadata);
   }
 }
 
-const runBuild = async (input: Bun.BuildConfig) => {
+const runBuild = async (input: Bun.BuildConfig): Promise<BundleOutput> => {
   const traceInputPlugin = new TraceInputPlugin();
   const result = await Bun.build({
     ...input,

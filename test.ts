@@ -1,13 +1,17 @@
 import { Context } from "./src/context";
+import { App, appStorage } from "./src/core/app";
 import { cloudflareApi } from "./src/providers/cloudflare";
-import KVNamespace from "./src/resources/kv-namespace";
-import R2Bucket from "./src/resources/r2-bucket";
-import Worker from "./src/resources/worker";
 import DurableObjectNamespace from "./src/resources/durable-object-namespace";
+import { KVNamespace } from "./src/resources/kv-namespace";
+import { R2Bucket } from "./src/resources/r2-bucket";
+import { Worker } from "./src/resources/worker";
 
-const ctx = new Context("down");
+const app = new App({
+  name: "test",
+  cwd: process.cwd(),
+});
+appStorage.enterWith(app);
 await cloudflareApi.init();
-Context.enter(ctx);
 
 const kvNamespace = new KVNamespace("test-kv-namespace", {
   title: "test-kv-namespace",
@@ -25,8 +29,10 @@ const worker = new Worker("test-worker", {
   bindings: {
     KV_NAMESPACE: kvNamespace,
     R2_BUCKET: r2Bucket,
+    DO_NAMESPACE: durableObjectNamespace,
   },
 });
-console.time("test-worker");
-await ctx.run();
-console.timeEnd("test-worker");
+const handler = app.handler();
+console.time("run");
+await handler.down();
+console.timeEnd("run");

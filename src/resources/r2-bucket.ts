@@ -1,6 +1,6 @@
 import z from "zod";
+import { Resource } from "../core/resource";
 import { cloudflareApi } from "../providers/cloudflare";
-import { Resource } from "../resource";
 
 const R2BucketStorageClass = z.enum(["Standard", "InfrequentAccess"]);
 const R2BucketJurisdiction = z.enum(["default", "eu", "fedramp"]);
@@ -26,44 +26,15 @@ export const R2BucketOutput = z.object({
 });
 export type R2BucketOutput = z.infer<typeof R2BucketOutput>;
 
-export default class R2Bucket extends Resource<
-  "r2-bucket",
+type R2BucketProperties = Resource.CRUDProperties<
+  string,
   R2BucketInput,
   R2BucketOutput
-> {
-  readonly kind = "r2-bucket";
+>;
 
-  run(
-    context: Resource.Context<R2BucketInput, R2BucketOutput>,
-  ): Resource.Action<R2BucketOutput> {
-    switch (context.status) {
-      case "create": {
-        return {
-          status: "create",
-          apply: () => this.createBucket(this.input),
-        };
-      }
-      case "update": {
-        if (!Bun.deepEquals(this.input, context.input)) {
-          return {
-            status: "replace",
-          };
-        }
-        return {
-          status: "none",
-        };
-      }
-      case "delete": {
-        return {
-          status: "delete",
-          apply: () => this.deleteBucket(context.output.name),
-        };
-      }
-    }
-  }
-
-  private async createBucket(input: R2BucketInput) {
-    return await cloudflareApi.post(
+export const r2BucketProvider: Resource.Provider<R2BucketProperties> = {
+  create: async (input) => {
+    const res = await cloudflareApi.post(
       `/accounts/${cloudflareApi.accountId}/r2/buckets`,
       {
         headers: {
@@ -80,11 +51,32 @@ export default class R2Bucket extends Resource<
         responseSchema: R2BucketOutput,
       },
     );
-  }
-
-  private async deleteBucket(name: string) {
+    return {
+      providerId: res.name,
+      output: res,
+    };
+  },
+  diff: async (input, state) => {
+    if (!Bun.deepEquals(state.input, input)) {
+      return "replace";
+    }
+    return "none";
+  },
+  delete: async (state) => {
     await cloudflareApi.delete(
-      `/accounts/${cloudflareApi.accountId}/r2/buckets/${name}`,
+      `/accounts/${cloudflareApi.accountId}/r2/buckets/${state.providerId}`,
     );
+  },
+};
+
+export class R2Bucket extends Resource<R2BucketProperties> {
+  readonly kind = "cloudflare:r2-bucket";
+
+  constructor(
+    name: string,
+    input: R2BucketInput,
+    metadata?: Resource.Metadata,
+  ) {
+    super(r2BucketProvider, name, input, metadata);
   }
 }

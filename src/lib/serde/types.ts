@@ -1,4 +1,3 @@
-import { Resource, ResourceStub } from "../../resource";
 import type { BundleFileProperties } from "../../resources/bundle/bundle-file";
 import { BundleFile } from "../../resources/bundle/bundle-file";
 import type { DurableObjectNamespaceProperties } from "../../resources/durable-object-namespace";
@@ -18,22 +17,6 @@ const serdeBundleFile: SerializableType<
   }),
   deserialize: (value) => new BundleFile(value),
   match: (value) => value instanceof BundleFile,
-};
-
-const serdeResource: SerializableType<
-  "resource",
-  Resource<string, unknown, unknown>,
-  { kind: string; name: string; input: unknown; dependencies: string[] }
-> = {
-  kind: "resource",
-  serialize: (value) => ({
-    kind: value.kind,
-    name: value.name,
-    input: value.input,
-    dependencies: value.dependencies,
-  }),
-  deserialize: (value) => new ResourceStub(value),
-  match: (value) => value instanceof Resource,
 };
 
 const serdeDurableObject: SerializableType<
@@ -83,7 +66,7 @@ const serdeUndefined: SerializableType<"undefined", undefined, null> = {
   kind: "undefined",
   serialize: () => null,
   deserialize: () => undefined,
-  match: (value) => value === undefined,
+  match: (value) => typeof value === "undefined",
 };
 
 export const serdeTypes = [
@@ -92,6 +75,5 @@ export const serdeTypes = [
   serdeMap,
   serdeSet,
   serdeUndefined,
-  serdeResource,
   serdeDurableObject,
 ];

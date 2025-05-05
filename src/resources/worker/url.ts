@@ -1,6 +1,6 @@
 import z from "zod";
+import { Resource } from "../../core/resource";
 import { cloudflareApi } from "../../providers/cloudflare";
-import { Resource } from "../../resource";
 
 export interface WorkerURLInput {
   scriptName: string;
@@ -11,49 +11,49 @@ export interface WorkerURLOutput {
   url?: string;
 }
 
-export default class WorkerURL extends Resource<
-  "worker/url",
+export type WorkerURLProperties = Resource.CRUDProperties<
+  string,
   WorkerURLInput,
   WorkerURLOutput
-> {
-  readonly kind = "worker/url";
+>;
 
-  async run(
-    context: Resource.Context<WorkerURLInput, WorkerURLOutput>,
-  ): Promise<Resource.Action<WorkerURLOutput>> {
-    if (context.status === "delete") {
-      return {
-        status: "delete",
-        apply: async () => {
-          await this.put({
-            scriptName: context.input.scriptName,
-            enabled: false,
-          });
-        },
-      };
-    }
-    if (this.input.enabled === !!context.output?.url) {
-      return {
-        status: "none",
-      };
-    }
+export class WorkerURLProvider
+  implements Resource.Provider<WorkerURLProperties>
+{
+  async create(input: Resource.Input<WorkerURLProperties>) {
     return {
-      status: context.status === "create" ? "create" : "update",
-      apply: async () => {
-        await this.put(this.input);
-        if (this.input.enabled) {
-          const subdomain = await this.getSubdomain();
-          const url = `https://${this.input.scriptName}.${subdomain}.workers.dev`;
-          console.log(`Worker URL: ${url}`);
-          return {
-            url,
-          };
-        }
-        return {
-          url: undefined,
-        };
-      },
+      providerId: input.scriptName,
+      output: await this.update(input),
     };
+  }
+
+  async diff(
+    input: Resource.Input<WorkerURLProperties>,
+    state: Resource.State<WorkerURLProperties>,
+  ): Promise<Resource.Diff> {
+    if (Bun.deepEquals(input, state.input)) {
+      return "none";
+    }
+    return "update";
+  }
+
+  async update(input: Resource.Input<WorkerURLProperties>) {
+    const [subdomain] = await Promise.all([
+      input.enabled ? this.getSubdomain() : undefined,
+      this.put(input),
+    ]);
+    return {
+      url: subdomain
+        ? `https://${input.scriptName}.${subdomain}.workers.dev`
+        : undefined,
+    };
+  }
+
+  async delete(state: Resource.State<WorkerURLProperties>) {
+    await this.put({
+      scriptName: state.input.scriptName,
+      enabled: false,
+    });
   }
 
   private async getSubdomain() {
@@ -87,5 +87,17 @@ export default class WorkerURL extends Resource<
         ]),
       },
     );
+  }
+}
+
+export class WorkerURL extends Resource<WorkerURLProperties> {
+  readonly kind = "cloudflare:worker:url";
+
+  constructor(
+    name: string,
+    input: WorkerURLInput,
+    metadata?: Resource.Metadata,
+  ) {
+    super(new WorkerURLProvider(), name, input, metadata);
   }
 }

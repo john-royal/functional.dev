@@ -1,0 +1,101 @@
+import type { UnsetMarker } from "../lib/types";
+import { register } from "./app";
+
+export type AnyResource = Resource<Resource.Properties>;
+
+export abstract class Resource<T extends Resource.Properties> {
+  abstract readonly kind: `${T["provider"]}:${T["kind"]}`;
+
+  constructor(
+    readonly provider: Resource.Provider<T>,
+    readonly name: string,
+    readonly input: T["input"]["in"],
+    readonly metadata: Resource.Metadata = {
+      dependsOn: [],
+    },
+  ) {
+    register(this);
+  }
+
+  getDerivedInput(state?: Resource.State<T>): Promise<T["input"]["out"]> {
+    return Promise.resolve(this.input as T["input"]["out"]);
+  }
+
+  getDerivedOutput(output: T["output"]["in"]): Promise<T["output"]["out"]> {
+    return Promise.resolve(output as T["output"]["out"]);
+  }
+}
+
+export namespace Resource {
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  type ShutUpBiome = any;
+
+  export interface Properties {
+    provider: string;
+    kind: string;
+    name: string;
+    input: {
+      in: ShutUpBiome;
+      out: ShutUpBiome;
+    };
+    output: {
+      providerId: ShutUpBiome;
+      in: ShutUpBiome;
+      out: ShutUpBiome;
+    };
+    dependencies: string[];
+    dependents: string[];
+    createdAt: number;
+    updatedAt: number;
+  }
+
+  export interface CRUDProperties<TID, TInput, TOutput> extends Properties {
+    input: { in: TInput; out: TInput };
+    output: { providerId: TID; in: TOutput; out: TOutput };
+  }
+
+  export interface Provider<T extends Properties> {
+    create: (input: Input<T>) => Promise<CreateResult<T>>;
+    read?: (providerId: T["output"]["providerId"]) => Promise<Output<T>>;
+    diff: (input: Input<T>, state: State<T>) => Promise<Diff>;
+    update?: (input: Input<T>, state: State<T>) => Promise<Output<T>>;
+    delete?: (state: State<T>) => Promise<void>;
+  }
+  type WithProviderID<
+    T extends Properties,
+    U,
+  > = T["output"]["providerId"] extends UnsetMarker
+    ? U
+    : U & {
+        providerId: T["output"]["providerId"];
+      };
+
+  type CreateResult<T extends Properties> =
+    T["output"]["providerId"] extends UnsetMarker
+      ? {
+          output: T["output"]["in"];
+          providerId?: undefined;
+        }
+      : {
+          output: T["output"]["in"];
+          providerId: T["output"]["providerId"];
+        };
+
+  export type State<T extends Properties> = WithProviderID<
+    T,
+    {
+      input: T["input"]["out"];
+      output: T["output"]["in"];
+    }
+  >;
+
+  export type Output<T extends Properties> = T["output"]["in"];
+
+  export type Input<T extends Properties> = T["input"]["out"];
+
+  export type Diff = "update" | "replace" | "none";
+
+  export interface Metadata {
+    dependsOn: string[];
+  }
+}

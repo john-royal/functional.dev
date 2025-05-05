@@ -35,7 +35,7 @@ export class Serde {
       if (!type) {
         throw new Error(`Unknown type: ${value["~kind"]}`);
       }
-      return type.deserialize(value["~value"]);
+      return type.deserialize(this.deserialize(value["~value"]));
     }
     if (Array.isArray(value)) {
       return value.map((value) => this.deserialize(value)) as T;

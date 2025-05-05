@@ -2,7 +2,7 @@ import sha256 from "./sha256";
 
 export const computeFileHash = async (file: Blob) => sha256(await file.bytes());
 
-export const verifyFileHashes = (inputs: Record<string, string>) => {
+export const haveFilesChanged = (inputs: Record<string, string>) => {
   const { promise, resolve } = Promise.withResolvers<boolean>();
   let done = false;
   Promise.all(

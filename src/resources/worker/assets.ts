@@ -1,11 +1,9 @@
-import assert from "node:assert";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 import Ignore from "ignore";
-import z from "zod";
+import { Resource } from "../../core/resource";
 import sha256 from "../../lib/sha256";
-import { cloudflareApi } from "../../providers/cloudflare";
-import { Resource } from "../../resource";
+import type { UnsetMarker } from "../../lib/types";
 
 export interface WorkerAssetsInput {
   scriptName: string;
@@ -21,120 +19,53 @@ export type WorkerAssetsManifest = Record<
 >;
 
 export interface WorkerAssetsOutput {
-  jwt?: string;
   headers?: string;
   redirects?: string;
   manifest: WorkerAssetsManifest;
 }
 
-export default class WorkerAssets extends Resource<
-  "worker/assets",
+export type WorkerAssetsProperties = Resource.CRUDProperties<
+  UnsetMarker,
   WorkerAssetsInput,
   WorkerAssetsOutput
-> {
-  readonly kind = "worker/assets";
+>;
 
-  async run(
-    context: Resource.Context<WorkerAssetsInput, WorkerAssetsOutput>,
-  ): Promise<Resource.Action<WorkerAssetsOutput>> {
-    if (context.status === "delete") {
-      return { status: "delete" };
-    }
-    const { files, headers, redirects, manifest } = await this.read();
-    if (
-      context.status === "update" &&
-      headers === context.output.headers &&
-      redirects === context.output.redirects &&
-      Bun.deepEquals(manifest, context.output.manifest)
-    ) {
-      return { status: "none" };
-    }
+export class WorkerAssetsProvider
+  implements Resource.Provider<WorkerAssetsProperties>
+{
+  async create(
+    input: WorkerAssetsInput,
+  ): Promise<{ output: WorkerAssetsOutput }> {
     return {
-      status: context.status === "create" ? "create" : "update",
-      apply: async () => {
-        const uploadSession = await this.createAssetUploadSession(manifest);
-        if (!uploadSession.jwt || !uploadSession.buckets) {
-          return {
-            jwt: uploadSession.jwt,
-            headers,
-            redirects,
-            manifest,
-          };
-        }
-        const jwt = await this.uploadAssets(
-          uploadSession.jwt,
-          uploadSession.buckets,
-          files,
-        );
-        return {
-          jwt,
-          headers,
-          redirects,
-          manifest,
-        };
-      },
+      output: await this.get(input),
     };
   }
 
-  private async createAssetUploadSession(manifest: WorkerAssetsManifest) {
-    return await cloudflareApi.post(
-      `/accounts/${cloudflareApi.accountId}/workers/scripts/${this.input.scriptName}/assets-upload-session`,
-      {
-        body: {
-          type: "json",
-          value: { manifest },
-        },
-        responseSchema: z.object({
-          jwt: z.string().optional(),
-          buckets: z.array(z.array(z.string())).optional(),
-        }),
-      },
-    );
+  async diff(
+    input: WorkerAssetsInput,
+    state: { input: WorkerAssetsInput; output: WorkerAssetsOutput },
+  ): Promise<"update" | "replace" | "none"> {
+    const output = await this.get(input);
+    if (
+      output.headers === state.output.headers &&
+      output.redirects === state.output.redirects &&
+      Bun.deepEquals(output.manifest, state.output.manifest)
+    ) {
+      return "none";
+    }
+    return "replace";
   }
 
-  private async uploadAssets(
-    jwt: string,
-    buckets: string[][],
-    files: Map<string, File>,
-  ) {
-    let completionToken = jwt;
-    await Promise.all(
-      buckets.map(async (bucket) => {
-        const formData = new FormData();
-        for (const fileHash of bucket) {
-          const file = files.get(fileHash);
-          assert(file, `File ${fileHash} not found`);
-          formData.append(fileHash, file);
-        }
-        const res = await cloudflareApi.post(
-          `/accounts/${cloudflareApi.accountId}/workers/assets/upload?base64=true`,
-          {
-            headers: {
-              Authorization: `Bearer ${jwt}`,
-            },
-            body: {
-              type: "form",
-              value: formData,
-            },
-            responseSchema: z.object({
-              jwt: z.string().optional(),
-            }),
-          },
-        );
-        if (res.jwt) {
-          completionToken = res.jwt;
-        }
-      }),
-    );
-    return completionToken;
-  }
-
-  private async read() {
+  private async get(input: WorkerAssetsInput) {
+    const readText = (name: string) =>
+      Bun.file(path.join(process.cwd(), input.path, name))
+        .text()
+        .catch(() => undefined);
     const [fileNames, ignore, headers, redirects] = await Promise.all([
-      readdir(path.join(process.cwd(), this.input.path), { recursive: true }),
-      this.readText(".assetsignore"),
-      this.readText("_headers"),
-      this.readText("_redirects"),
+      readdir(path.join(process.cwd(), input.path), { recursive: true }),
+      readText(".assetsignore"),
+      readText("_headers"),
+      readText("_redirects"),
     ]);
     const matcher = Ignore().add([
       ".assetsignore",
@@ -143,13 +74,12 @@ export default class WorkerAssets extends Resource<
       ...(ignore?.split("\n") ?? []),
     ]);
     const manifest: WorkerAssetsManifest = {};
-    const files = new Map<string, File>();
     await Promise.all(
       fileNames.map(async (fileName) => {
         if (matcher.ignores(fileName)) {
           return;
         }
-        const filePath = path.join(this.input.path, fileName);
+        const filePath = path.join(input.path, fileName);
         const file = Bun.file(filePath);
         const stat = await file.stat();
         if (!stat.isDirectory()) {
@@ -163,24 +93,21 @@ export default class WorkerAssets extends Resource<
             size: stat.size,
             hash,
           };
-          files.set(
-            hash,
-            new File([bytes.toBase64()], hash, { type: file.type }),
-          );
         }
       }),
     );
     return {
-      files,
       headers,
       redirects,
       manifest,
     };
   }
+}
 
-  private async readText(name: string) {
-    return await Bun.file(path.join(process.cwd(), this.input.path, name))
-      .text()
-      .catch(() => undefined);
+export class WorkerAssets extends Resource<WorkerAssetsProperties> {
+  readonly kind = "cloudflare:worker:assets";
+
+  constructor(name: string, input: WorkerAssetsInput) {
+    super(new WorkerAssetsProvider(), name, input);
   }
 }
