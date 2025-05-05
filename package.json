@@ -1,8 +1,10 @@
 {
   "name": "functional-monorepo",
+  "peerDependencies": {
+    "typescript": "^5.7.3"
+  },
   "packageManager": "bun@1.2.12",
   "private": true,
-  "type": "module",
   "scripts": {
     "format": "biome format",
     "format:write": "biome format --write",
@@ -11,21 +13,11 @@
     "check": "biome check",
     "check:write": "biome check --write"
   },
+  "trustedDependencies": ["@biomejs/biome"],
+  "type": "module",
   "workspaces": ["packages/*", "examples/*"],
-  "dependencies": {
-    "@iarna/toml": "^2.2.5",
-    "ignore": "^7.0.4",
-    "superjson": "^2.2.2",
-    "xdg-app-paths": "^8.3.0",
-    "zod": "^4.0.0-beta.20250430T185432"
-  },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
-    "@cloudflare/workers-types": "^4.20250505.0",
     "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5.7.3"
-  },
-  "trustedDependencies": ["@biomejs/biome"]
+  }
 }
