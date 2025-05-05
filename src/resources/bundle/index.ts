@@ -66,7 +66,6 @@ class BundleProvider implements Resource.Provider<BundleResourceProperties> {
     input: Resource.Input<BundleResourceProperties>,
   ): Promise<BundleOutput> => {
     const outdir = $app.path.scope(input.outdir);
-    console.log("outdir", outdir);
     const traceInputPlugin = new TraceInputPlugin();
     const result = await Bun.build({
       ...input,

@@ -105,7 +105,11 @@ export class WorkerAssetsProvider
 export default class WorkerAssets extends Resource<WorkerAssetsProperties> {
   readonly kind = "cloudflare:worker:assets";
 
+  static override get provider() {
+    return new WorkerAssetsProvider();
+  }
+
   constructor(name: string, input: WorkerAssetsInput) {
-    super(new WorkerAssetsProvider(), name, input);
+    super(WorkerAssets.provider, name, input);
   }
 }

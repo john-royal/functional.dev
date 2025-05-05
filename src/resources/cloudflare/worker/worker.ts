@@ -7,7 +7,11 @@ import KVNamespace from "../kv-namespace";
 import R2Bucket from "../r2-bucket";
 import WorkerAssets, { type WorkerAssetsOutput } from "./assets";
 import { WorkerProvider } from "./provider";
-import type { WorkerMetadataOutput, WorkersBindingKind } from "./types";
+import type {
+  WorkerMetadataOutput,
+  WorkersBindingInput,
+  WorkersBindingKind,
+} from "./types";
 import WorkerURL from "./url";
 
 export interface WorkerInput {
@@ -18,7 +22,7 @@ export interface WorkerInput {
   bindings?: Record<
     string,
     // biome-ignore lint/suspicious/noExplicitAny: required for binding types
-    Resource<any> | DurableObjectNamespace | WorkersBindingKind
+    Resource<any> | DurableObjectNamespace | WorkersBindingInput
   >;
 }
 
@@ -29,7 +33,9 @@ export interface WorkerProperties extends Resource.Properties {
     in: WorkerInput;
     out: {
       name: string;
-      assets?: WorkerAssetsOutput;
+      assets?: WorkerAssetsOutput & {
+        path: string;
+      };
       durableObjectNamespaces?: DurableObjectNamespace[];
       bindings?: WorkersBindingKind[];
       bundle: BundleFile[];
@@ -112,7 +118,12 @@ export default class Worker extends Resource<WorkerProperties> {
 
     return {
       name: this.input.name,
-      assets,
+      assets: assets
+        ? {
+            ...assets,
+            path: this.input.assets as string,
+          }
+        : undefined,
       durableObjectNamespaces: Object.values(this.input.bindings ?? {}).filter(
         (binding) => binding instanceof DurableObjectNamespace,
       ),
@@ -123,17 +134,17 @@ export default class Worker extends Resource<WorkerProperties> {
 
   private async generateTypes(bindings: WorkersBindingKind[]) {
     const types = {
+      assets: "Fetcher",
       kv_namespace: "KVNamespace",
       durable_object_namespace: "DurableObjectNamespace",
       hyperdrive: "HyperdriveConfig",
       r2_bucket: "R2Bucket",
       plain_text: "string",
       secret_text: "string",
+      json: "string",
 
-      json: "unknown",
       ai: "unknown",
       analytics_engine: "unknown",
-      assets: "unknown",
       browser_rendering: "unknown",
       d1: "unknown",
       dispatch_namespace: "unknown",
@@ -174,7 +185,10 @@ export default class Worker extends Resource<WorkerProperties> {
             !(resource instanceof Resource) &&
             !(resource instanceof DurableObjectNamespace)
           ) {
-            return resource;
+            return {
+              name,
+              ...resource,
+            };
           }
           if (resource instanceof KVNamespace) {
             const output = await useResourceOutput(resource);

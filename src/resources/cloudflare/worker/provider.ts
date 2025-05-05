@@ -10,6 +10,7 @@ import {
   WorkerMetadataOutput,
 } from "./types";
 import type { WorkerProperties } from "./worker";
+import path from "node:path";
 
 export class WorkerProvider implements Resource.Provider<WorkerProperties> {
   async create(input: Resource.Input<WorkerProperties>) {
@@ -57,7 +58,11 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
       ),
     };
     if (input.assets) {
-      const jwt = await this.uploadAssets(input.name, input.assets.manifest);
+      const jwt = await this.uploadAssets(
+        input.name,
+        input.assets.path,
+        input.assets.manifest,
+      );
       metadata.assets = {
         jwt,
         config: {
@@ -140,6 +145,7 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
 
   private async uploadAssets(
     scriptName: string,
+    assetsPath: string,
     manifest: WorkerAssetsManifest,
   ) {
     const uploadSessionResponse = await $cloudflare.post(
@@ -163,7 +169,7 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
     const files = new Map(
       Object.entries(manifest).map(([name, { hash }]) => [
         hash,
-        Bun.file(name),
+        Bun.file(path.join(process.cwd(), assetsPath, name)),
       ]),
     );
     let completionToken = uploadSessionResponse.jwt;

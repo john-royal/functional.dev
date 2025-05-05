@@ -253,6 +253,32 @@ export const WorkersBindingKind = z.union([
 ]);
 export type WorkersBindingKind = z.infer<typeof WorkersBindingKind>;
 
+export const WorkersBindingInput = z.union([
+  WorkersBindingKindAI.omit({ name: true }),
+  WorkersBindingKindAnalyticsEngine.omit({ name: true }),
+  WorkersBindingKindAssets.omit({ name: true }),
+  WorkersBindingKindBrowserRendering.omit({ name: true }),
+  WorkersBindingKindD1.omit({ name: true }),
+  WorkersBindingKindDispatchNamespace.omit({ name: true }),
+  WorkersBindingKindDurableObjectNamespace.omit({ name: true }),
+  WorkersBindingKindHyperdrive.omit({ name: true }),
+  WorkersBindingKindJson.omit({ name: true }),
+  WorkersBindingKindKVNamespace.omit({ name: true }),
+  WorkersBindingKindMTLSCertificate.omit({ name: true }),
+  WorkersBindingKindPlainText.omit({ name: true }),
+  WorkersBindingKindPipelines.omit({ name: true }),
+  WorkersBindingKindQueue.omit({ name: true }),
+  WorkersBindingKindR2Bucket.omit({ name: true }),
+  WorkersBindingKindSecretText.omit({ name: true }),
+  WorkersBindingKindService.omit({ name: true }),
+  WorkersBindingKindTailConsumer.omit({ name: true }),
+  WorkersBindingKindVectorize.omit({ name: true }),
+  WorkersBindingKindVersionMetadata.omit({ name: true }),
+  WorkersBindingKindSecretsStoreSecret.omit({ name: true }),
+  WorkersBindingKindSecretKey.omit({ name: true }),
+]);
+export type WorkersBindingInput = z.infer<typeof WorkersBindingInput>;
+
 export const WorkerMetadataInput = z.object({
   assets: WorkerAssetsInput.optional(),
   bindings: z.array(WorkersBindingKind).optional(),

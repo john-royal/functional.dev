@@ -63,15 +63,13 @@ export class CloudflareClient {
     if (!parsed.success) {
       console.error("Failed to decode Cloudflare API response", json);
       throw new Error(
-        `Failed to decode Cloudflare API response: ${parsed.error}`,
+        `Failed to decode Cloudflare API response: ${JSON.stringify(parsed.error)}`,
       );
     }
     const { data } = parsed;
     if (!res.ok || !data.success) {
       throw new Error(
-        `Cloudflare API error (${res.status}) - ${data.errors
-          .map((error) => `${error.code}: ${error.message}`)
-          .join(", ")}`,
+        `Cloudflare API error (${res.status}) - ${data.errors?.map((error) => `${error.code}: ${error.message}`).join(", ")}`,
       );
     }
     return data.result as T;
@@ -147,8 +145,8 @@ type CloudflareErrorResponse = z.infer<typeof CloudflareErrorResponse>;
 const CloudflareSuccessResponse = <T>(result: z.ZodType<T>) =>
   z.object({
     success: z.literal(true),
-    errors: z.array(CloudflareMessage),
-    messages: z.array(CloudflareMessage),
+    errors: z.array(CloudflareMessage).nullable(),
+    messages: z.array(CloudflareMessage).nullable(),
     result,
   });
 type CloudflareSuccessResponse<T> = z.infer<
