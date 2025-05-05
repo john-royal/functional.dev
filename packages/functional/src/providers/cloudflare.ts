@@ -126,7 +126,7 @@ export class CloudflareClient {
   }
 }
 
-const CloudflareMessage = z.interface({
+const CloudflareMessage = z.object({
   code: z.number(),
   message: z.string(),
   get error_chain() {
@@ -135,7 +135,7 @@ const CloudflareMessage = z.interface({
 });
 type CloudflareMessage = z.infer<typeof CloudflareMessage>;
 
-const CloudflareErrorResponse = z.interface({
+const CloudflareErrorResponse = z.object({
   success: z.literal(false),
   errors: z.array(CloudflareMessage),
   messages: z.array(CloudflareMessage),

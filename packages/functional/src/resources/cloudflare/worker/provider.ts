@@ -56,6 +56,8 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
         input.durableObjectNamespaces ?? [],
         state,
       ),
+      compatibility_flags: ["nodejs_compat"],
+      compatibility_date: "2025-05-01",
     };
     if (input.assets) {
       const jwt = await this.uploadAssets(
