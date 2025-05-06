@@ -45,6 +45,14 @@ export class JSONStore implements IStore {
 
   private async save() {
     await this.mutex.runExclusive(async () => {
+      if (Object.keys(this.state).length === 0) {
+        await this.file.unlink().catch((error) => {
+          if (error.code !== "ENOENT") {
+            throw error;
+          }
+        });
+        return;
+      }
       await this.file.write(JSON.stringify(serialize(this.state), null, 2));
     });
   }
