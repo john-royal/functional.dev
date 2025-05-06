@@ -7,7 +7,14 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "ignore": ["bun.lock", ".functional"]
+    "ignore": [
+      "bun.lock",
+      ".functional",
+      "dist",
+      "build",
+      "node_modules",
+      ".react-router"
+    ]
   },
   "formatter": {
     "enabled": true,
@@ -30,5 +37,15 @@
     "formatter": {
       "quoteStyle": "double"
     }
-  }
+  },
+  "overrides": [
+    {
+      "include": ["tsconfig.json", "tsconfig.*.json", "wrangler.jsonc"],
+      "json": {
+        "parser": {
+          "allowComments": true
+        }
+      }
+    }
+  ]
 }

@@ -1,6 +1,6 @@
 import { App, appStorage } from "functional.dev/src/core/app";
-import Worker from "functional.dev/src/resources/cloudflare/worker";
 import DurableObjectNamespace from "functional.dev/src/resources/cloudflare/durable-object-namespace";
+import Worker from "functional.dev/src/resources/cloudflare/worker";
 
 const app = new App({
   name: "test",

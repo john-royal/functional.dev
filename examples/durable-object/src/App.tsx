@@ -1,33 +1,33 @@
-import { useEffect, useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useEffect, useState } from "react";
+import viteLogo from "/vite.svg";
+import reactLogo from "./assets/react.svg";
+import "./App.css";
 
-const useCount  = () => {
-  const [value, setValue] = useState<number | null>(null)
+const useCount = () => {
+  const [value, setValue] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchCount = async () => {
-      const res = await fetch('/counter')
-      const count = await res.text()
-      setValue(Number(count))
-    }
-    fetchCount()
-  }, [])
+      const res = await fetch("/counter");
+      const count = await res.text();
+      setValue(Number(count));
+    };
+    fetchCount();
+  }, []);
 
   const increment = async () => {
-    const res = await fetch('/counter', { method: 'POST' })
-    const count = await res.text()
-    setValue(Number(count))
-  }
+    const res = await fetch("/counter", { method: "POST" });
+    const count = await res.text();
+    setValue(Number(count));
+  };
 
-  return {value, increment}
-}
+  return { value, increment };
+};
 
 function App() {
-  const {value, increment} = useCount()
+  const { value, increment } = useCount();
 
-  return (  
+  return (
     <>
       <div>
         <a href="https://vite.dev" target="_blank" rel="noreferrer">
@@ -50,7 +50,7 @@ function App() {
         Click on the Vite and React logos to learn more
       </p>
     </>
-  )
+  );
 }
 
-export default App
+export default App;
