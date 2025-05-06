@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import toml from "@iarna/toml";
 import xdgAppPaths from "xdg-app-paths";
-import { z } from "zod";
+import * as v from "valibot";
 
 const config = {
   WRANGLER_DIR: xdgAppPaths(".wrangler").config(),
@@ -85,7 +85,7 @@ class WranglerConfigProvider {
       );
     });
     const config = toml.parse(text.replace(/\r\n/g, "\n"));
-    this.config = WranglerConfig.parse(config);
+    this.config = v.parse(WranglerConfig, config);
     return this.config;
   }
 
@@ -123,46 +123,47 @@ class WranglerConfigProvider {
     });
     const json = await res.json();
     if (!res.ok) {
-      const error = OAuthError.parse(json);
+      const error = v.parse(OAuthError, json);
       throw new Error(`Failed to refresh token: ${error.error_description}`);
     }
-    return OAuthTokens.parse(json);
+    return v.parse(OAuthTokens, json);
   }
 }
 
-const WranglerConfig = z.object({
-  oauth_token: z.string(),
-  expiration_time: z.coerce.date(),
-  refresh_token: z.string(),
-  scopes: z.array(z.string()),
+const WranglerConfig = v.object({
+  oauth_token: v.string(),
+  expiration_time: v.date(),
+  refresh_token: v.string(),
+  scopes: v.array(v.string()),
 });
-type WranglerConfig = z.infer<typeof WranglerConfig>;
+type WranglerConfig = v.InferOutput<typeof WranglerConfig>;
 
-const OAuthTokens = z
-  .object({
-    access_token: z.string(),
-    refresh_token: z.string(),
-    expires_in: z.number(),
-    scope: z.string(),
-  })
-  .transform(
+const OAuthTokens = v.pipe(
+  v.object({
+    access_token: v.string(),
+    refresh_token: v.string(),
+    expires_in: v.number(),
+    scope: v.string(),
+  }),
+  v.transform(
     (tokens): WranglerConfig => ({
       oauth_token: tokens.access_token,
       expiration_time: new Date(Date.now() + tokens.expires_in * 1000),
       refresh_token: tokens.refresh_token,
       scopes: tokens.scope.split(" "),
     }),
-  );
-type OAuthTokens = z.infer<typeof OAuthTokens>;
+  ),
+);
+type OAuthTokens = v.InferOutput<typeof OAuthTokens>;
 
-const OAuthError = z.object({
-  error: z.string(),
-  error_verbose: z.string(),
-  error_description: z.string(),
-  error_hint: z.string().optional(),
-  status_code: z.number(),
+const OAuthError = v.object({
+  error: v.string(),
+  error_verbose: v.string(),
+  error_description: v.string(),
+  error_hint: v.optional(v.string()),
+  status_code: v.number(),
 });
-type OAuthError = z.infer<typeof OAuthError>;
+type OAuthError = v.InferOutput<typeof OAuthError>;
 
 class SingleFlight<TResult> {
   result?: Promise<TResult>;

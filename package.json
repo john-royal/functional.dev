@@ -1,8 +1,5 @@
 {
   "name": "functional-monorepo",
-  "peerDependencies": {
-    "typescript": "^5.7.3"
-  },
   "packageManager": "bun@1.2.12",
   "private": true,
   "scripts": {
@@ -19,5 +16,8 @@
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.8.3"
   }
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import path from "node:path";
-import z from "zod";
+import * as v from "valibot";
 import { $cloudflare } from "~/core/app";
 import type { Resource } from "~/core/resource";
 import type DurableObjectNamespace from "../durable-object-namespace";
@@ -164,9 +164,9 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
             manifest,
           },
         },
-        responseSchema: z.object({
-          jwt: z.string().optional(),
-          buckets: z.array(z.array(z.string())).optional(),
+        responseSchema: v.object({
+          jwt: v.optional(v.string()),
+          buckets: v.optional(v.array(v.array(v.string()))),
         }),
       },
     );
@@ -204,8 +204,8 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
               type: "form",
               value: formData,
             },
-            responseSchema: z.object({
-              jwt: z.string().optional(),
+            responseSchema: v.object({
+              jwt: v.optional(v.string()),
             }),
           },
         );

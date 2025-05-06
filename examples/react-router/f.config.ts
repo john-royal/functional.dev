@@ -1,5 +1,5 @@
-import Worker from "functional/src/resources/cloudflare/worker";
-import { App, appStorage } from "functional/src/core/app";
+import Worker from "functional.dev/src/resources/cloudflare/worker";
+import { App, appStorage } from "functional.dev/src/core/app";
 
 const proc = process.argv.slice(2);
 

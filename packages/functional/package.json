@@ -1,5 +1,5 @@
 {
-  "name": "functional",
+  "name": "functional.dev",
   "module": "index.ts",
   "type": "module",
   "private": true,
@@ -12,9 +12,10 @@
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",
+    "arktype": "^2.1.20",
     "ignore": "^7.0.4",
     "superjson": "^2.2.2",
-    "xdg-app-paths": "^8.3.0",
-    "zod": "^4.0.0-beta.20250505T012514"
+    "valibot": "^1.1.0",
+    "xdg-app-paths": "^8.3.0"
   }
 }

@@ -1,8 +1,8 @@
 import { rmdir } from "node:fs/promises";
 import { $app } from "~/core/app";
-import type { WithRequired } from "~/lib/types";
 import { Resource } from "~/core/resource";
 import { haveFilesChanged } from "~/lib/file";
+import type { WithRequired } from "~/lib/types";
 import { BundleFile } from "./bundle-file";
 import { TraceInputPlugin } from "./plugins";
 

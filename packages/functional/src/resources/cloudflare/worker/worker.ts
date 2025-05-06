@@ -67,6 +67,7 @@ export default class Worker extends Resource<WorkerProperties> {
       sourcemap: "external",
       outdir: name,
       format: "esm",
+      minify: { whitespace: true, syntax: true, identifiers: false },
     });
     const assets = input.assets
       ? new WorkerAssets(`${name}.assets`, {

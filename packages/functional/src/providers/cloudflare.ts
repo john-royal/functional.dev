@@ -1,14 +1,17 @@
-import { z } from "zod";
-import type { IStore } from "~/lib/store";
+import * as v from "valibot";
 import { APIClient, type FetchOptions } from "~/lib/api";
+import type { IStore } from "~/lib/store";
 import { CloudflareAuth } from "./cloudflare-auth";
 
 interface CloudflareClientOptions {
   accountId?: string;
 }
 
-interface CloudflareRequest<T = unknown> extends FetchOptions<unknown> {
-  responseSchema?: z.ZodType<T>;
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+type AnySchema<T> = v.BaseSchema<T, any, any>;
+
+interface CloudflareRequest<T> extends FetchOptions<unknown> {
+  responseSchema?: AnySchema<T>;
 }
 
 export class CloudflareClient {
@@ -41,7 +44,7 @@ export class CloudflareClient {
       return accountId;
     }
     const accounts = await this.get("/accounts", {
-      responseSchema: z.array(z.object({ id: z.string() })),
+      responseSchema: v.array(v.object({ id: v.string() })),
     });
     if (!accounts[0]) {
       throw new Error("No accounts found");
@@ -51,28 +54,33 @@ export class CloudflareClient {
     return newAccountId;
   }
 
-  async fetch<T = unknown>(
+  async fetch<T>(
     path: `/${string}`,
     { responseSchema, ...options }: CloudflareRequest<T>,
   ) {
     const res = await this.api.fetch(path, options);
     const json = await res.json();
-    const parsed = CloudflareResponse(responseSchema ?? z.unknown()).safeParse(
+    const parsed = v.safeParse(
+      CloudflareResponse<T>(
+        responseSchema ?? (v.unknown() as v.BaseSchema<T, T, v.BaseIssue<T>>),
+      ),
       json,
     );
     if (!parsed.success) {
-      console.error("Failed to decode Cloudflare API response", json);
+      console.error(
+        "Failed to decode Cloudflare API response",
+        json,
+        parsed.issues,
+      );
+      throw new Error("Failed to decode Cloudflare API response");
+    }
+    const { output } = parsed;
+    if (!res.ok || !output.success) {
       throw new Error(
-        `Failed to decode Cloudflare API response: ${JSON.stringify(parsed.error)}`,
+        `Cloudflare API error (${res.status}) - ${output.errors?.map((error) => `${error.code}: ${error.message}`).join(", ")}`,
       );
     }
-    const { data } = parsed;
-    if (!res.ok || !data.success) {
-      throw new Error(
-        `Cloudflare API error (${res.status}) - ${data.errors?.map((error) => `${error.code}: ${error.message}`).join(", ")}`,
-      );
-    }
-    return data.result as T;
+    return output.result;
   }
 
   async get<T>(
@@ -126,33 +134,35 @@ export class CloudflareClient {
   }
 }
 
-const CloudflareMessage = z.object({
-  code: z.number(),
-  message: z.string(),
-  get error_chain() {
-    return z.array(CloudflareMessage).optional();
-  },
+const CloudflareMessage = v.object({
+  code: v.number(),
+  message: v.string(),
+  error_chain: v.any(),
 });
-type CloudflareMessage = z.infer<typeof CloudflareMessage>;
+type CloudflareMessage = v.InferOutput<typeof CloudflareMessage>;
 
-const CloudflareErrorResponse = z.object({
-  success: z.literal(false),
-  errors: z.array(CloudflareMessage),
-  messages: z.array(CloudflareMessage),
+const CloudflareErrorResponse = v.object({
+  success: v.literal(false),
+  errors: v.array(CloudflareMessage),
+  messages: v.array(CloudflareMessage),
 });
-type CloudflareErrorResponse = z.infer<typeof CloudflareErrorResponse>;
+type CloudflareErrorResponse = v.InferOutput<typeof CloudflareErrorResponse>;
 
-const CloudflareSuccessResponse = <T>(result: z.ZodType<T>) =>
-  z.object({
-    success: z.literal(true),
-    errors: z.array(CloudflareMessage).nullable(),
-    messages: z.array(CloudflareMessage).nullable(),
+const CloudflareSuccessResponse = <T>(
+  result: v.BaseSchema<T, T, v.BaseIssue<T>>,
+) =>
+  v.object({
+    success: v.literal(true),
+    errors: v.nullable(v.array(CloudflareMessage)),
+    messages: v.nullable(v.array(CloudflareMessage)),
     result,
   });
-type CloudflareSuccessResponse<T> = z.infer<
+type CloudflareSuccessResponse<T> = v.InferOutput<
   ReturnType<typeof CloudflareSuccessResponse<T>>
 >;
 
-const CloudflareResponse = <T>(result: z.ZodType<T>) =>
-  z.union([CloudflareSuccessResponse(result), CloudflareErrorResponse]);
-type CloudflareResponse<T> = z.infer<ReturnType<typeof CloudflareResponse<T>>>;
+const CloudflareResponse = <T>(result: v.BaseSchema<T, T, v.BaseIssue<T>>) =>
+  v.union([CloudflareSuccessResponse(result), CloudflareErrorResponse]);
+type CloudflareResponse<T> = v.InferOutput<
+  ReturnType<typeof CloudflareResponse<T>>
+>;

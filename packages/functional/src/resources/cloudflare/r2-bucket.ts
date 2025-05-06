@@ -1,30 +1,45 @@
-import z from "zod";
+import * as v from "valibot";
 import { $cloudflare } from "~/core/app";
 import { Resource } from "~/core/resource";
 
-const R2BucketStorageClass = z.enum(["Standard", "InfrequentAccess"]);
-const R2BucketJurisdiction = z.enum(["default", "eu", "fedramp"]);
-const R2BucketLocation = z.enum(["APAC", "EEUR", "ENAM", "WEUR", "WNAM", "OC"]);
-
-export const R2BucketInput = z.object({
-  name: z
-    .string()
-    .min(3)
-    .max(64)
-    .transform((name) => name.toLowerCase().replace(/[^a-z0-9]/g, "-")),
-  locationHint: R2BucketLocation.optional(),
-  storageClass: R2BucketStorageClass.optional(),
-  jurisdiction: R2BucketJurisdiction.optional(),
+const R2BucketStorageClass = v.enum({
+  Standard: "Standard",
+  InfrequentAccess: "InfrequentAccess",
 });
-export type R2BucketInput = z.infer<typeof R2BucketInput>;
-
-export const R2BucketOutput = z.object({
-  name: z.string(),
-  creation_date: z.string(),
-  location: R2BucketLocation.optional(),
-  storage_class: R2BucketStorageClass.optional(),
+const R2BucketJurisdiction = v.enum({
+  default: "default",
+  eu: "eu",
+  fedramp: "fedramp",
 });
-export type R2BucketOutput = z.infer<typeof R2BucketOutput>;
+const R2BucketLocation = v.enum({
+  APAC: "APAC",
+  EEUR: "EEUR",
+  ENAM: "ENAM",
+  WEUR: "WEUR",
+  WNAM: "WNAM",
+  OC: "OC",
+});
+
+export const R2BucketInput = v.object({
+  name: v.pipe(
+    v.string(),
+    v.minLength(3),
+    v.maxLength(64),
+    v.transform((name) => name.toLowerCase().replace(/[^a-z0-9]/g, "-")),
+  ),
+  locationHint: v.optional(R2BucketLocation),
+  storageClass: v.optional(R2BucketStorageClass),
+  jurisdiction: v.optional(R2BucketJurisdiction),
+});
+export type R2BucketInput = v.InferOutput<typeof R2BucketInput>;
+
+export const R2BucketOutput = v.object({
+  name: v.string(),
+  creation_date: v.string(),
+  location: v.optional(R2BucketLocation),
+  storage_class: v.optional(R2BucketStorageClass),
+});
+export type R2BucketOutput = v.InferOutput<typeof R2BucketOutput>;
 
 type R2BucketProperties = Resource.CRUDProperties<
   R2BucketInput,

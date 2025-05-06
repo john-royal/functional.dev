@@ -1,6 +1,6 @@
-import { App, appStorage } from "functional/src/core/app";
-import KVNamespace from "functional/src/resources/cloudflare/kv-namespace";
-import Worker from "functional/src/resources/cloudflare/worker";
+import { App, appStorage } from "functional.dev/src/core/app";
+import KVNamespace from "functional.dev/src/resources/cloudflare/kv-namespace";
+import Worker from "functional.dev/src/resources/cloudflare/worker";
 
 const proc = process.argv.slice(2);
 

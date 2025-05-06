@@ -1,19 +1,19 @@
-import z from "zod";
+import * as v from "valibot";
 import { $cloudflare } from "~/core/app";
 import { Resource } from "~/core/resource";
 
-export const KVNamespaceInput = z.object({
-  title: z.string(),
+export const KVNamespaceInput = v.object({
+  title: v.string(),
 });
-export type KVNamespaceInput = z.infer<typeof KVNamespaceInput>;
+export type KVNamespaceInput = v.InferOutput<typeof KVNamespaceInput>;
 
-export const KVNamespaceOutput = z.object({
-  id: z.string(),
-  title: z.string(),
-  beta: z.boolean(),
-  supports_url_encoding: z.boolean(),
+export const KVNamespaceOutput = v.object({
+  id: v.string(),
+  title: v.string(),
+  beta: v.boolean(),
+  supports_url_encoding: v.boolean(),
 });
-export type KVNamespaceOutput = z.infer<typeof KVNamespaceOutput>;
+export type KVNamespaceOutput = v.InferOutput<typeof KVNamespaceOutput>;
 
 export type KVNamespaceProperties = Resource.CRUDProperties<
   KVNamespaceInput,
