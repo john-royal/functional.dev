@@ -174,6 +174,7 @@ export default class Worker extends Resource<WorkerProperties> {
       "}",
       "",
       "type Env = CloudflareEnv;",
+      "",
     ];
     await Bun.write("env.d.ts", typeDefinition.join("\n"));
   }
