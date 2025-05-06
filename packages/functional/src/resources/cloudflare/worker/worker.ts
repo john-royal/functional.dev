@@ -64,7 +64,7 @@ export default class Worker extends Resource<WorkerProperties> {
   constructor(name: string, input: WorkerInput) {
     const bundle = new Bundle(`${name}.bundle`, {
       entrypoints: [input.handler],
-      sourcemap: "none",
+      sourcemap: "external",
       outdir: name,
       format: "esm",
     });

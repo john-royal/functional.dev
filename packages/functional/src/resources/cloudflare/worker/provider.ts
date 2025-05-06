@@ -1,4 +1,5 @@
 import assert from "node:assert";
+import path from "node:path";
 import z from "zod";
 import { $cloudflare } from "~/core/app";
 import type { Resource } from "~/core/resource";
@@ -10,7 +11,6 @@ import {
   WorkerMetadataOutput,
 } from "./types";
 import type { WorkerProperties } from "./worker";
-import path from "node:path";
 
 export class WorkerProvider implements Resource.Provider<WorkerProperties> {
   async create(input: Resource.Input<WorkerProperties>) {
@@ -84,7 +84,12 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
       formData.append(
         file.name,
         new File([await file.text()], file.name, {
-          type: "application/javascript+module",
+          type:
+            file.kind === "entry-point" || file.kind === "chunk"
+              ? "application/javascript+module"
+              : file.kind === "sourcemap"
+                ? "application/source-map"
+                : "application/octet-stream",
         }),
       );
     }
