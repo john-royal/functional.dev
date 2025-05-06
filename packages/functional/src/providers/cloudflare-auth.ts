@@ -169,11 +169,8 @@ class SingleFlight<TResult> {
   result?: Promise<TResult>;
 
   run(fn: () => Promise<TResult>): Promise<TResult> {
-    if (this.result) {
-      return this.result;
-    }
     try {
-      this.result = fn();
+      this.result ??= fn();
       return this.result;
     } finally {
       this.result = undefined;

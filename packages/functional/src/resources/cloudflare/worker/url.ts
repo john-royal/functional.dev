@@ -1,4 +1,4 @@
-import z from "zod";
+import * as v from "valibot";
 import { $cloudflare } from "~/core/app";
 import { Resource } from "~/core/resource";
 
@@ -76,8 +76,8 @@ export class WorkerURLProvider
     const res = await $cloudflare.get(
       `/accounts/${$cloudflare.accountId}/workers/subdomain`,
       {
-        responseSchema: z.object({
-          subdomain: z.string(),
+        responseSchema: v.object({
+          subdomain: v.string(),
         }),
       },
     );
@@ -94,12 +94,12 @@ export class WorkerURLProvider
             ? { enabled: true, previews_enabled: true }
             : { enabled: false },
         },
-        responseSchema: z.union([
-          z.object({
-            enabled: z.boolean(),
-            previews_enabled: z.boolean(),
+        responseSchema: v.union([
+          v.object({
+            enabled: v.boolean(),
+            previews_enabled: v.boolean(),
           }),
-          z.null(),
+          v.null(),
         ]),
       },
     );
