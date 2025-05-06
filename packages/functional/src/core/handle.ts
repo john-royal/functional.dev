@@ -85,8 +85,9 @@ export class LifecycleHandler {
   }
 
   private async upInternal() {
+    let changed = false;
     for (const group of this.groups) {
-      const actions = await Promise.all(
+      const plan = await Promise.all(
         group.map(async (name) => {
           const handle = this.handles.get(name);
           assert(handle, `Resource ${name} not found`);
@@ -94,13 +95,17 @@ export class LifecycleHandler {
         }),
       );
       await Promise.all(
-        actions.map(([name, action]) => {
+        plan.map(([name, action]) => {
           if (action) {
             console.log(`[${name}] ${action.action}`);
+            changed = true;
             return action.apply();
           }
         }),
       );
+    }
+    if (!changed) {
+      console.log("No changes detected");
     }
   }
 
