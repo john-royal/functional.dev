@@ -17,10 +17,10 @@ export type WorkerURLProperties = Resource.CRUDProperties<
   string
 >;
 
-export default class WorkerURL extends Resource<WorkerURLProperties> {
+export class WorkerURL extends Resource<WorkerURLProperties> {
   readonly kind = "cloudflare:worker:url";
 
-  static override get provider(): Resource.Provider<WorkerURLProperties> {
+  static get provider(): Resource.Provider<WorkerURLProperties> {
     return new WorkerURLProvider();
   }
 

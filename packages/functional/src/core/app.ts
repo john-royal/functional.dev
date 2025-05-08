@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
-import { CloudflareClient } from "~/providers/cloudflare";
+import { CloudflareClient } from "~/cloudflare/internal/client";
 import { JSONStore } from "../lib/store";
 import { LifecycleHandler } from "./handle";
 import type { AnyResource } from "./resource";
@@ -53,13 +53,20 @@ export class App implements AppProperties {
   handler() {
     return new LifecycleHandler(this);
   }
-}
 
-export const appStorage = new AsyncLocalStorage<App>();
+  static storage = new AsyncLocalStorage<App>();
+
+  static async init(properties: AppProperties) {
+    const app = new App(properties);
+    App.storage.enterWith(app);
+    await app.init();
+    return app;
+  }
+}
 
 export const $app = new Proxy({} as App, {
   get: (_, prop: keyof App) => {
-    const app = appStorage.getStore();
+    const app = App.storage.getStore();
     if (!app) {
       const error = new Error("$app must be called inside an App");
       Error.captureStackTrace(error);

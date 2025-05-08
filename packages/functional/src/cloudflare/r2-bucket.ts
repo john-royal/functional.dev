@@ -47,47 +47,8 @@ type R2BucketProperties = Resource.CRUDProperties<
   string
 >;
 
-export default class R2Bucket extends Resource<R2BucketProperties> {
+export class R2Bucket extends Resource<R2BucketProperties> {
   readonly kind = "cloudflare:r2-bucket";
-
-  static get provider(): Resource.Provider<R2BucketProperties> {
-    return {
-      create: async (input) => {
-        const res = await $cloudflare.post(
-          `/accounts/${$cloudflare.accountId}/r2/buckets`,
-          {
-            headers: {
-              "cf-r2-jurisdiction": input.jurisdiction ?? "default",
-            },
-            body: {
-              type: "json",
-              value: {
-                name: input.name,
-                locationHint: input.locationHint,
-                storageClass: input.storageClass,
-              },
-            },
-            responseSchema: R2BucketOutput,
-          },
-        );
-        return {
-          providerId: res.name,
-          output: res,
-        };
-      },
-      diff: async (input, state) => {
-        if (!Bun.deepEquals(state.input, input)) {
-          return "replace";
-        }
-        return "none";
-      },
-      delete: async (state) => {
-        await $cloudflare.delete(
-          `/accounts/${$cloudflare.accountId}/r2/buckets/${state.providerId}`,
-        );
-      },
-    };
-  }
 
   constructor(
     name: string,
@@ -96,4 +57,41 @@ export default class R2Bucket extends Resource<R2BucketProperties> {
   ) {
     super(R2Bucket.provider, name, input, metadata);
   }
+
+  static readonly provider: Resource.Provider<R2BucketProperties> = {
+    create: async (input) => {
+      const res = await $cloudflare.post(
+        `/accounts/${$cloudflare.accountId}/r2/buckets`,
+        {
+          headers: {
+            "cf-r2-jurisdiction": input.jurisdiction ?? "default",
+          },
+          body: {
+            type: "json",
+            value: {
+              name: input.name,
+              locationHint: input.locationHint,
+              storageClass: input.storageClass,
+            },
+          },
+          responseSchema: R2BucketOutput,
+        },
+      );
+      return {
+        providerId: res.name,
+        output: res,
+      };
+    },
+    diff: async (input, state) => {
+      if (!Bun.deepEquals(state.input, input)) {
+        return "replace";
+      }
+      return "none";
+    },
+    delete: async (state) => {
+      await $cloudflare.delete(
+        `/accounts/${$cloudflare.accountId}/r2/buckets/${state.providerId}`,
+      );
+    },
+  };
 }

@@ -3,7 +3,10 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
-  "files": ["src/*", "src/**/*"],
+  "exports": {
+    "./config": "./src/config.ts",
+    "./cloudflare": "./src/cloudflare/index.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },

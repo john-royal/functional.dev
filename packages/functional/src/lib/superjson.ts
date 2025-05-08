@@ -1,11 +1,9 @@
 import * as superjson from "superjson";
+import { BundleFile, type BundleFileProperties } from "~/bundle/bundle-file";
 import {
-  BundleFile,
-  type BundleFileProperties,
-} from "~/resources/bundle/bundle-file";
-import DurableObjectNamespace, {
+  DurableObjectNamespace,
   type DurableObjectNamespaceProperties,
-} from "~/resources/cloudflare/durable-object-namespace";
+} from "~/cloudflare/durable-object-namespace";
 
 superjson.registerCustom(
   {

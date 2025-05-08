@@ -132,7 +132,13 @@ class WranglerConfigProvider {
 
 const WranglerConfig = v.object({
   oauth_token: v.string(),
-  expiration_time: v.date(),
+  expiration_time: v.union([
+    v.date(),
+    v.pipe(
+      v.string(),
+      v.transform((date) => new Date(date)),
+    ),
+  ]),
   refresh_token: v.string(),
   scopes: v.array(v.string()),
 });

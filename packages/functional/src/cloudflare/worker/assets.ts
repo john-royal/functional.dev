@@ -28,6 +28,18 @@ export type WorkerAssetsProperties = Resource.CRUDProperties<
   WorkerAssetsOutput
 >;
 
+export class WorkerAssets extends Resource<WorkerAssetsProperties> {
+  readonly kind = "cloudflare:worker:assets";
+
+  static override get provider() {
+    return new WorkerAssetsProvider();
+  }
+
+  constructor(name: string, input: WorkerAssetsInput) {
+    super(WorkerAssets.provider, name, input);
+  }
+}
+
 export class WorkerAssetsProvider
   implements Resource.Provider<WorkerAssetsProperties>
 {
@@ -99,17 +111,5 @@ export class WorkerAssetsProvider
       redirects,
       manifest,
     };
-  }
-}
-
-export default class WorkerAssets extends Resource<WorkerAssetsProperties> {
-  readonly kind = "cloudflare:worker:assets";
-
-  static override get provider() {
-    return new WorkerAssetsProvider();
-  }
-
-  constructor(name: string, input: WorkerAssetsInput) {
-    super(WorkerAssets.provider, name, input);
   }
 }

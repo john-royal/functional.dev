@@ -1,18 +1,18 @@
 import { useResourceOutput } from "~/core/output";
 import { Resource } from "~/core/resource";
-import Bundle from "~/resources/bundle";
-import type { BundleFile } from "~/resources/bundle/bundle-file";
-import DurableObjectNamespace from "../durable-object-namespace";
-import KVNamespace from "../kv-namespace";
-import R2Bucket from "../r2-bucket";
-import WorkerAssets, { type WorkerAssetsOutput } from "./assets";
+import { Bundle } from "~/bundle";
+import type { BundleFile } from "~/bundle/bundle-file";
+import { DurableObjectNamespace } from "../durable-object-namespace";
+import { KVNamespace } from "../kv-namespace";
+import { R2Bucket } from "../r2-bucket";
+import { type WorkerAssetsOutput, WorkerAssets } from "./assets";
 import { WorkerProvider } from "./provider";
 import type {
   WorkerMetadataOutput,
   WorkersBindingInput,
   WorkersBindingKind,
 } from "./types";
-import WorkerURL from "./url";
+import { WorkerURL } from "./url";
 
 export interface WorkerInput {
   name: string;
@@ -50,12 +50,11 @@ export interface WorkerProperties extends Resource.Properties {
   };
 }
 
-export default class Worker extends Resource<WorkerProperties> {
+export class Worker extends Resource<WorkerProperties> {
   readonly kind = "cloudflare:worker";
 
-  static override get provider(): Resource.Provider<WorkerProperties> {
-    return new WorkerProvider();
-  }
+  static readonly provider: Resource.Provider<WorkerProperties> =
+    new WorkerProvider();
 
   bundle: Bundle;
   assets?: WorkerAssets;

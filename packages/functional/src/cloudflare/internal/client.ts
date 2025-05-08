@@ -1,7 +1,7 @@
 import * as v from "valibot";
 import { APIClient, type FetchOptions } from "~/lib/api";
 import type { IStore } from "~/lib/store";
-import { CloudflareAuth } from "./cloudflare-auth";
+import { CloudflareAuth } from "./auth";
 
 interface CloudflareClientOptions {
   accountId?: string;

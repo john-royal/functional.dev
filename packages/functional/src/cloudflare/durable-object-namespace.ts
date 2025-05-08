@@ -7,7 +7,7 @@ export interface DurableObjectNamespaceProperties {
   namespaceId?: string;
 }
 
-export default class DurableObjectNamespace
+export class DurableObjectNamespace
   implements DurableObjectNamespaceProperties
 {
   className: string;

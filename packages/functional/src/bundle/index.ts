@@ -16,7 +16,7 @@ interface BundleOutput {
   artifacts: BundleFile[];
 }
 
-export default class Bundle extends Resource<BundleResourceProperties> {
+export class Bundle extends Resource<BundleResourceProperties> {
   readonly kind = "bundle";
 
   static override get provider() {

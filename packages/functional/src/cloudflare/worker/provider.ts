@@ -3,7 +3,7 @@ import path from "node:path";
 import * as v from "valibot";
 import { $cloudflare } from "~/core/app";
 import type { Resource } from "~/core/resource";
-import type DurableObjectNamespace from "../durable-object-namespace";
+import type { DurableObjectNamespace } from "../durable-object-namespace";
 import type { WorkerAssetsManifest } from "./assets";
 import {
   type SingleStepMigration,
