@@ -1,7 +1,7 @@
 import { useResourceOutput } from "~/core/output";
 import { Resource } from "~/core/resource";
 import { Bundle } from "~/bundle";
-import type { BundleFile } from "~/bundle/bundle-file";
+import { BundleFile } from "~/bundle/bundle-file";
 import { DurableObjectNamespace } from "../durable-object-namespace";
 import { KVNamespace } from "../kv-namespace";
 import { R2Bucket } from "../r2-bucket";
@@ -13,6 +13,8 @@ import type {
   WorkersBindingKind,
 } from "./types";
 import { WorkerURL } from "./url";
+import { nodeFileTrace } from "@vercel/nft";
+import { computeFileHash } from "~/lib/file";
 
 export interface WorkerInput {
   name: string;
@@ -24,6 +26,7 @@ export interface WorkerInput {
     // biome-ignore lint/suspicious/noExplicitAny: required for binding types
     Resource<any> | DurableObjectNamespace | WorkersBindingInput
   >;
+  bundle?: boolean;
 }
 
 export interface WorkerProperties extends Resource.Properties {
@@ -56,23 +59,40 @@ export class Worker extends Resource<WorkerProperties> {
   static readonly provider: Resource.Provider<WorkerProperties> =
     new WorkerProvider();
 
-  bundle: Bundle;
+  bundle: Bundle | RawBundle;
   assets?: WorkerAssets;
   url: WorkerURL;
 
-  constructor(name: string, input: WorkerInput) {
-    const bundle = new Bundle(`${name}.bundle`, {
-      entrypoints: [input.handler],
-      sourcemap: "external",
-      outdir: name,
-      format: "esm",
-      minify: { whitespace: true, syntax: true, identifiers: false },
-    });
+  constructor(name: string, input: WorkerInput, metadata?: Resource.Metadata) {
+    const bundle =
+      input.bundle === false
+        ? new RawBundle(
+            `${name}.handler-archive`,
+            {
+              entry: input.handler,
+            },
+            metadata,
+          )
+        : new Bundle(
+            `${name}.bundle`,
+            {
+              entrypoints: [input.handler],
+              sourcemap: "external",
+              outdir: name,
+              format: "esm",
+              minify: { whitespace: true, syntax: true, identifiers: false },
+            },
+            metadata,
+          );
     const assets = input.assets
-      ? new WorkerAssets(`${name}.assets`, {
-          scriptName: input.name,
-          path: input.assets,
-        })
+      ? new WorkerAssets(
+          `${name}.assets`,
+          {
+            scriptName: input.name,
+            path: input.assets,
+          },
+          metadata,
+        )
       : undefined;
     const url = new WorkerURL(
       `${name}.url`,
@@ -86,8 +106,10 @@ export class Worker extends Resource<WorkerProperties> {
     );
 
     super(Worker.provider, name, input, {
+      ...metadata,
       dependsOn: [
-        bundle.name,
+        ...(metadata?.dependsOn ?? []),
+        bundle?.name,
         assets?.name,
         ...Object.values(input.bindings ?? {})
           .filter((binding) => binding instanceof Resource)
@@ -104,7 +126,7 @@ export class Worker extends Resource<WorkerProperties> {
     const [assets, bindings, bundle] = await Promise.all([
       useResourceOutput(this.assets),
       this.resolveBindings(),
-      useResourceOutput(this.bundle).then((bundle) => bundle.artifacts),
+      this.resolveBundle(),
     ]);
 
     if (assets) {
@@ -219,6 +241,78 @@ export class Worker extends Resource<WorkerProperties> {
           throw new Error(`Unsupported binding type: ${resource}`);
         },
       ),
+    );
+  }
+
+  private async resolveBundle() {
+    if (this.bundle instanceof RawBundle) {
+      return useResourceOutput(this.bundle).then((bundle) => bundle.artifacts);
+    }
+    return useResourceOutput(this.bundle).then((bundle) => bundle.artifacts);
+  }
+}
+
+type RawBundleProperties = Resource.CRUDProperties<
+  {
+    entry: string;
+  },
+  {
+    artifacts: BundleFile[];
+  }
+>;
+
+export class RawBundle extends Resource<RawBundleProperties> {
+  readonly kind = "raw-bundle";
+
+  static get provider() {
+    return new RawBundleProvider();
+  }
+
+  constructor(
+    name: string,
+    input: { entry: string },
+    metadata?: Resource.Metadata,
+  ) {
+    super(RawBundle.provider, name, input, metadata);
+  }
+}
+
+class RawBundleProvider implements Resource.Provider<RawBundleProperties> {
+  create = async (input: Resource.Input<RawBundleProperties>) => {
+    const artifacts = await this.readBundle(input);
+    return {
+      output: {
+        artifacts,
+      },
+    };
+  };
+
+  diff = async (
+    input: Resource.Input<RawBundleProperties>,
+    state: Resource.State<RawBundleProperties>,
+  ) => {
+    if (!Bun.deepEquals(input, state.input)) {
+      return "replace";
+    }
+    const artifacts = await this.readBundle(input);
+    if (!Bun.deepEquals(artifacts, state.output.artifacts)) {
+      return "replace";
+    }
+    return "none";
+  };
+
+  private async readBundle(input: Resource.Input<RawBundleProperties>) {
+    const { entry: path } = input;
+    const artifacts = await nodeFileTrace([path]);
+    return await Promise.all(
+      Array.from(artifacts.esmFileList.values()).map(async (fileName) => {
+        return new BundleFile({
+          name: fileName,
+          kind: fileName === path ? "entry-point" : "chunk",
+          hash: await computeFileHash(Bun.file(fileName)),
+          directory: "..",
+        });
+      }),
     );
   }
 }

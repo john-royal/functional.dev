@@ -12,4 +12,7 @@ export const resourceProviders = {
   "cloudflare:r2-bucket": () =>
     import("~/cloudflare/r2-bucket").then((m) => m.R2Bucket.provider),
   bundle: () => import("~/bundle").then((m) => m.Bundle.provider),
+  command: () => import("~/command").then((m) => m.Command.provider),
+  "raw-bundle": () =>
+    import("~/cloudflare/worker").then((m) => m.RawBundle.provider),
 } as Record<string, () => Promise<Resource.Provider<Resource.Properties>>>;

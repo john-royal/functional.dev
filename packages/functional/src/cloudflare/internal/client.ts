@@ -137,7 +137,7 @@ export class CloudflareClient {
 const CloudflareMessage = v.object({
   code: v.number(),
   message: v.string(),
-  error_chain: v.any(),
+  error_chain: v.optional(v.any()),
 });
 type CloudflareMessage = v.InferOutput<typeof CloudflareMessage>;
 

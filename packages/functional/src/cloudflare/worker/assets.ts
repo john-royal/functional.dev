@@ -35,8 +35,12 @@ export class WorkerAssets extends Resource<WorkerAssetsProperties> {
     return new WorkerAssetsProvider();
   }
 
-  constructor(name: string, input: WorkerAssetsInput) {
-    super(WorkerAssets.provider, name, input);
+  constructor(
+    name: string,
+    input: WorkerAssetsInput,
+    metadata?: Resource.Metadata,
+  ) {
+    super(WorkerAssets.provider, name, input, metadata);
   }
 }
 
