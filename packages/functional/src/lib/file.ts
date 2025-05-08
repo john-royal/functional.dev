@@ -1,6 +1,11 @@
 import sha256 from "./sha256";
 
-export const computeFileHash = async (file: Blob) => sha256(await file.bytes());
+interface FileConvertible {
+  bytes(): Promise<Uint8Array>;
+}
+
+export const computeFileHash = async (file: FileConvertible) =>
+  sha256(await file.bytes());
 
 export const haveFilesChanged = (inputs: Record<string, string>) => {
   const { promise, resolve } = Promise.withResolvers<boolean>();

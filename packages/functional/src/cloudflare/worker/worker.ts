@@ -294,8 +294,13 @@ class RawBundleProvider implements Resource.Provider<RawBundleProperties> {
     if (!Bun.deepEquals(input, state.input)) {
       return "replace";
     }
-    const artifacts = await this.readBundle(input);
-    if (!Bun.deepEquals(artifacts, state.output.artifacts)) {
+    const changes = await Promise.all(
+      state.output.artifacts.map(async (artifact) => {
+        const hash = await computeFileHash(artifact).catch(() => undefined);
+        return hash === artifact.hash;
+      }),
+    );
+    if (!changes.every((change) => change)) {
       return "replace";
     }
     return "none";
@@ -303,8 +308,9 @@ class RawBundleProvider implements Resource.Provider<RawBundleProperties> {
 
   private async readBundle(input: Resource.Input<RawBundleProperties>) {
     const { entry: path } = input;
+    // TODO: nodeFileTrace is kinda slow, might actually be faster to run a fake build...
     const artifacts = await nodeFileTrace([path]);
-    return await Promise.all(
+    const files = await Promise.all(
       Array.from(artifacts.esmFileList.values()).map(async (fileName) => {
         return new BundleFile({
           name: fileName,
@@ -314,5 +320,6 @@ class RawBundleProvider implements Resource.Provider<RawBundleProperties> {
         });
       }),
     );
+    return files;
   }
 }
