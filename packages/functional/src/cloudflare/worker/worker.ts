@@ -13,8 +13,8 @@ import type {
   WorkersBindingKind,
 } from "./types";
 import { WorkerURL } from "./url";
-import { nodeFileTrace } from "@vercel/nft";
 import { computeFileHash } from "~/lib/file";
+import { TraceInputPlugin } from "~/bundle/plugins";
 
 export interface WorkerInput {
   name: string;
@@ -294,32 +294,35 @@ class RawBundleProvider implements Resource.Provider<RawBundleProperties> {
     if (!Bun.deepEquals(input, state.input)) {
       return "replace";
     }
-    const changes = await Promise.all(
+    const artifacts = await this.readBundle(input);
+    const diffs = await Promise.all(
       state.output.artifacts.map(async (artifact) => {
         const hash = await computeFileHash(artifact).catch(() => undefined);
         return hash === artifact.hash;
       }),
     );
-    if (!changes.every((change) => change)) {
+    if (diffs.includes(false)) {
       return "replace";
     }
     return "none";
   };
 
   private async readBundle(input: Resource.Input<RawBundleProperties>) {
-    const { entry: path } = input;
-    // TODO: nodeFileTrace is kinda slow, might actually be faster to run a fake build...
-    const artifacts = await nodeFileTrace([path]);
-    const files = await Promise.all(
-      Array.from(artifacts.esmFileList.values()).map(async (fileName) => {
-        return new BundleFile({
-          name: fileName,
-          kind: fileName === path ? "entry-point" : "chunk",
-          hash: await computeFileHash(Bun.file(fileName)),
-          directory: "..",
-        });
-      }),
-    );
-    return files;
+    // Originally this used @vercel/nft to trace the bundle, but a fake Bun.build
+    // actually ends up being faster.
+    const files = new TraceInputPlugin();
+    await Bun.build({
+      entrypoints: [input.entry],
+      plugins: [files],
+    });
+    const manifest = await files.getManifest();
+    return Object.entries(manifest).map(([name, hash]) => {
+      return new BundleFile({
+        name,
+        kind: name === input.entry ? "entry-point" : "chunk",
+        hash,
+        directory: "..",
+      });
+    });
   }
 }
