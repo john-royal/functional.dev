@@ -22,6 +22,20 @@ export class LifecycleHandler {
     await this.deleteStrayResources();
   }
 
+  async dev() {
+    await useResourceOutputStorage.run(this, async () => {
+      for (const group of this.groups) {
+        const actions = Promise.all(
+          group.map(async (name) => {
+            const handle = this.handles.get(name);
+            assert(handle, `Resource ${name} not found`);
+            return [name, await handle.dev()] as const;
+          }),
+        );
+      }
+    });
+  }
+
   async down() {
     for (const group of this.groups.toReversed()) {
       const actions = await Promise.all(
@@ -118,6 +132,18 @@ export class ResourceHandle<
 
   get dependencies() {
     return this.resource.metadata.dependsOn;
+  }
+
+  async dev() {
+    const state = await this.app.state.get<SerializedResourceState<T>>(
+      this.resource.name,
+    );
+    assert(state, `Resource ${this.resource.name} not found`);
+    this.actionPromise.resolve("none");
+    this.outputPromise.resolve(state.output);
+    if (this.resource.provider.dev) {
+      return this.resource.provider.dev(await this.resource.getDerivedInput());
+    }
   }
 
   async up() {

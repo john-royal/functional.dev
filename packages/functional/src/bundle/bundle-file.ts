@@ -21,13 +21,15 @@ export class BundleFile implements BundleFileProperties {
     this.hash = properties.hash;
     this.kind = properties.kind;
     this.directory = properties.directory;
-    this.file = Bun.file(
-      $app.path.scope(properties.directory, properties.name),
-    );
+    this.file = Bun.file(this.path);
   }
 
   get type() {
     return this.file.type;
+  }
+
+  get path() {
+    return $app.path.scope(this.directory, this.name);
   }
 
   text = async () => this.file.text();

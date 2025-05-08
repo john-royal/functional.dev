@@ -18,6 +18,7 @@ export type WorkerAssetsManifest = Record<
 >;
 
 export interface WorkerAssetsOutput {
+  path: string;
   headers?: string;
   redirects?: string;
   manifest: WorkerAssetsManifest;
@@ -111,6 +112,7 @@ export class WorkerAssetsProvider
       }),
     );
     return {
+      path: input.path,
       headers,
       redirects,
       manifest,

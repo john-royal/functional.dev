@@ -18,6 +18,7 @@
     "@iarna/toml": "^2.2.5",
     "arktype": "^2.1.20",
     "ignore": "^7.0.4",
+    "miniflare": "^4.20250507.0",
     "superjson": "^2.2.2",
     "valibot": "^1.1.0",
     "xdg-app-paths": "^8.3.0"

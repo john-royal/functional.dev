@@ -48,6 +48,9 @@ export class WorkerURLProvider
     state: Resource.State<WorkerURLProperties>,
   ): Promise<Resource.Diff> {
     if (Bun.deepEquals(input, state.input)) {
+      if (state.output.url) {
+        console.log(`[${input.scriptName}] URL: ${state.output.url}`);
+      }
       return "none";
     }
     return "update";
@@ -58,11 +61,14 @@ export class WorkerURLProvider
       input.enabled ? this.getSubdomain() : undefined,
       this.put(input),
     ]);
-    return {
-      url: subdomain
-        ? `https://${input.scriptName}.${subdomain}.workers.dev`
-        : undefined,
-    };
+    if (subdomain) {
+      const url = `https://${input.scriptName}.${subdomain}.workers.dev`;
+      console.log(`[${input.scriptName}] URL: ${url}`);
+      return {
+        url,
+      };
+    }
+    return {};
   }
 
   async delete(state: Resource.State<WorkerURLProperties>) {

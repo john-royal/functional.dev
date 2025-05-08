@@ -63,6 +63,7 @@ export namespace Resource {
     diff: (input: Input<T>, state: State<T>) => Promise<Diff>;
     update?: (input: Input<T>, state: State<T>) => Promise<Output<T>>;
     delete?: (state: State<T>) => Promise<void>;
+    dev?: (input: Input<T>) => Promise<unknown>;
   }
   type WithProviderID<
     T extends Properties,

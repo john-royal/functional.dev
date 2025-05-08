@@ -12,10 +12,13 @@ export async function defineConfig(config: Config) {
     cwd: process.cwd(),
   });
   await config.setup();
-  const proc = process.argv[2] as "up" | "down";
-  if (["up", "down"].includes(proc)) {
+  const proc = process.argv[2] as "up" | "down" | "dev";
+  if (["up", "down", "dev"].includes(proc)) {
+    if (proc === "dev") {
+      console.warn("Dev server is in alpha, proceed with caution");
+    }
     await app.handler()[proc]();
   } else {
-    console.log("Usage: bun run functional.config.ts [up|down]");
+    console.log("Usage: bun run functional.config.ts [up|down|dev]");
   }
 }

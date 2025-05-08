@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import path from "node:path";
 import * as v from "valibot";
-import { $cloudflare } from "~/core/app";
+import { $app, $cloudflare } from "~/core/app";
 import type { Resource } from "~/core/resource";
 import type { DurableObjectNamespace } from "../durable-object-namespace";
 import type { WorkerAssetsManifest } from "./assets";
@@ -11,6 +11,7 @@ import {
   WorkerMetadataOutput,
 } from "./types";
 import type { WorkerProperties } from "./worker";
+import { Log, LogLevel, Miniflare, type MiniflareOptions } from "miniflare";
 
 export class WorkerProvider implements Resource.Provider<WorkerProperties> {
   async create(input: Resource.Input<WorkerProperties>) {
@@ -215,5 +216,74 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
       }),
     );
     return completionToken;
+  }
+
+  async dev(input: Resource.Input<WorkerProperties>) {
+    const entry = input.bundle.find((file) => file.kind === "entry-point");
+    assert(entry, "No entry point found");
+    const options: MiniflareOptions = {
+      name: input.name,
+      scriptPath: entry.path,
+      modules: true,
+      port: 8787,
+      compatibilityFlags: ["nodejs_compat"],
+      compatibilityDate: "2025-05-01",
+      logRequests: true,
+      verbose: true,
+      log: new Log(LogLevel.VERBOSE),
+    };
+    for (const binding of input.bindings ?? []) {
+      switch (binding.type) {
+        case "kv_namespace": {
+          if (!options.kvNamespaces) {
+            options.kvNamespaces = [];
+            options.kvPersist = $app.path.scope(input.name, "mf", "kv");
+          }
+          (options.kvNamespaces as string[]).push(binding.name);
+          break;
+        }
+        case "r2_bucket": {
+          if (!options.r2Buckets) {
+            options.r2Buckets = [];
+            options.r2Persist = $app.path.scope(input.name, "mf", "r2");
+          }
+          (options.r2Buckets as string[]).push(binding.name);
+          break;
+        }
+        case "durable_object_namespace": {
+          if (!options.durableObjects) {
+            options.durableObjects = {};
+            options.durableObjectsPersist = $app.path.scope(
+              input.name,
+              "mf",
+              "do",
+            );
+          }
+          options.durableObjects[binding.name] = {
+            className: binding.class_name,
+            scriptName: input.name,
+            useSQLite:
+              input.durableObjectNamespaces?.find(
+                (namespace) => namespace.className === binding.class_name,
+              )?.sqlite ?? false,
+            unsafeUniqueKey: binding.class_name,
+          };
+          break;
+        }
+        case "assets":
+          options.assets = {
+            binding: binding.name,
+            directory: input.assets?.path ?? "",
+            routerConfig: {
+              has_user_worker: true,
+              invoke_user_worker_ahead_of_assets: true,
+            },
+          };
+          break;
+      }
+    }
+    const mf = new Miniflare(options);
+    await mf.ready;
+    console.log(`[${input.name}] Dev server started at http://localhost:8787`);
   }
 }
