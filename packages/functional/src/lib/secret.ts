@@ -12,6 +12,13 @@ export class SecretString extends String {
   static from(encrypted: EncryptedValue, key: Buffer) {
     return new SecretString(decrypt(encrypted, key));
   }
+
+  static wrap(value: string | SecretString) {
+    if (value instanceof SecretString) {
+      return value;
+    }
+    return new SecretString(value);
+  }
 }
 
 export type EncryptedValue = {

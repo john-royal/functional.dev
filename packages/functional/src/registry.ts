@@ -11,6 +11,8 @@ export const resourceProviders = {
     import("~/cloudflare/kv-namespace").then((m) => m.KVNamespace.provider),
   "cloudflare:r2-bucket": () =>
     import("~/cloudflare/r2-bucket").then((m) => m.R2Bucket.provider),
+  "cloudflare:hyperdrive": () =>
+    import("~/cloudflare/hyperdrive").then((m) => m.Hyperdrive.provider),
   bundle: () => import("~/bundle").then((m) => m.Bundle.provider),
   command: () => import("~/command").then((m) => m.Command.provider),
   "raw-bundle": () =>
