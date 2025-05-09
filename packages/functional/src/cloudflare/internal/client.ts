@@ -75,7 +75,7 @@ export class CloudflareClient {
       throw new Error("Failed to decode Cloudflare API response");
     }
     const { output } = parsed;
-    if (!res.ok || !output.success) {
+    if (!res.ok || !output.success || !output.result) {
       throw new Error(
         `Cloudflare API error (${res.status}) - ${output.errors?.map((error) => `${error.code}: ${error.message}`).join(", ")}`,
       );
@@ -141,28 +141,13 @@ const CloudflareMessage = v.object({
 });
 type CloudflareMessage = v.InferOutput<typeof CloudflareMessage>;
 
-const CloudflareErrorResponse = v.object({
-  success: v.literal(false),
-  errors: v.array(CloudflareMessage),
-  messages: v.array(CloudflareMessage),
-});
-type CloudflareErrorResponse = v.InferOutput<typeof CloudflareErrorResponse>;
-
-const CloudflareSuccessResponse = <T>(
-  result: v.BaseSchema<T, T, v.BaseIssue<T>>,
-) =>
+const CloudflareResponse = <T>(result: v.BaseSchema<T, T, v.BaseIssue<T>>) =>
   v.object({
-    success: v.literal(true),
+    success: v.boolean(),
     errors: v.nullable(v.array(CloudflareMessage)),
     messages: v.nullable(v.array(CloudflareMessage)),
-    result,
+    result: v.nullable(result),
   });
-type CloudflareSuccessResponse<T> = v.InferOutput<
-  ReturnType<typeof CloudflareSuccessResponse<T>>
->;
-
-const CloudflareResponse = <T>(result: v.BaseSchema<T, T, v.BaseIssue<T>>) =>
-  v.union([CloudflareSuccessResponse(result), CloudflareErrorResponse]);
 type CloudflareResponse<T> = v.InferOutput<
   ReturnType<typeof CloudflareResponse<T>>
 >;
