@@ -1,13 +1,10 @@
 import path from "node:path";
 import { CloudflareClient } from "~/cloudflare/internal/client";
 import {
-  decrypt,
-  deriveKey,
-  encrypt,
-  generatePassphraseMetadata,
-  type Encrypted,
   type PassphraseMetadata,
-} from "~/lib/encryption";
+  deriveKey,
+  generatePassphraseMetadata,
+} from "~/lib/secret";
 import { JSONStore } from "../lib/store";
 import { deserialize, serialize } from "../lib/superjson";
 import { run } from "./lifecycle";
@@ -28,7 +25,7 @@ export class App implements AppProperties {
   phase: Phase;
   out: string;
   passphrase?: string;
-  key?: Buffer;
+  private maybeKey?: Buffer;
   auth: JSONStore;
   state: JSONStore;
   resources = new Map<string, AnyResource>();
@@ -53,18 +50,11 @@ export class App implements AppProperties {
     };
   }
 
-  encrypt(value: string): Encrypted {
-    if (!this.key) {
+  get key() {
+    if (!this.maybeKey) {
       throw new Error("No key");
     }
-    return encrypt(value, this.key);
-  }
-
-  decrypt(value: Encrypted): string {
-    if (!this.key) {
-      throw new Error("No key");
-    }
-    return decrypt(value, this.key);
+    return this.maybeKey;
   }
 
   async init() {
@@ -75,7 +65,7 @@ export class App implements AppProperties {
         metadata = generatePassphraseMetadata();
         await this.auth.set("key", metadata);
       }
-      this.key = deriveKey(this.passphrase, metadata);
+      this.maybeKey = deriveKey(this.passphrase, metadata);
     }
     await this.state.load();
     await this.providers.cloudflare.init();

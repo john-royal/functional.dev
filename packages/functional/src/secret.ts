@@ -1,27 +1,23 @@
 import type { Bindable } from "./binding";
 import type { WorkersBindingInput } from "./cloudflare/worker/types";
+import { SecretString } from "./lib/secret";
 
 export class Secret implements Bindable {
-  constructor(public value: string) {}
+  text: SecretString;
+
+  constructor(text: string) {
+    this.text = new SecretString(text);
+  }
 
   getBinding(): WorkersBindingInput {
     return {
       type: "secret_text",
-      text: this.proxy(),
+      // This is a hack to accomplish two things:
+      // - We want Cloudflare to receive the actual value
+      // - We want to encrypt the value in our local state
+      // This works because SecretString is a subclass of String.
+      text: this.text as unknown as string,
     };
-  }
-
-  toString() {
-    return this.value;
-  }
-
-  toJSON() {
-    return this.value;
-  }
-
-  private proxy<T>(): T {
-    // biome-ignore lint/suspicious/noExplicitAny: this is a hack... figure out a better way
-    return this as any;
   }
 
   static fromEnv(name: string) {
