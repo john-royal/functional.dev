@@ -6,7 +6,8 @@ import { $app } from "~/core/app";
 import { $run } from "~/core/lifecycle";
 import { Resource } from "~/core/resource";
 import { computeFileHash } from "~/lib/file";
-import { type WorkerAssetsOutput, WorkerAssets } from "./assets";
+import { DurableObjectNamespace } from "../durable-object-namespace";
+import { WorkerAssets, type WorkerAssetsOutput } from "./assets";
 import { WorkerProvider } from "./provider";
 import type {
   WorkerMetadataOutput,
@@ -34,7 +35,8 @@ export interface WorkerProperties extends Resource.Properties {
       assets?: WorkerAssetsOutput & {
         path: string;
       };
-      bindings?: Record<string, Bindable | WorkersBindingInput>;
+      durableObjectNamespaces?: DurableObjectNamespace[];
+      bindings?: WorkersBindingKind[];
       bundle: BundleFile[];
     };
   };
@@ -120,10 +122,20 @@ export class Worker extends Resource<WorkerProperties> {
   }
 
   async getDerivedInput() {
-    const [assets, bundle] = await Promise.all([
+    const [assets, bindings, bundle] = await Promise.all([
       $run.use(this.assets),
+      this.resolveBindings(),
       this.resolveBundle(),
     ]);
+
+    if (assets) {
+      bindings.push({
+        name: "ASSETS",
+        type: "assets",
+      });
+    }
+
+    void this.generateTypes(bindings);
 
     return {
       name: this.input.name,
@@ -133,7 +145,10 @@ export class Worker extends Resource<WorkerProperties> {
             path: this.input.assets as string,
           }
         : undefined,
-      bindings: this.input.bindings,
+      durableObjectNamespaces: Object.values(this.input.bindings ?? {}).filter(
+        (binding) => binding instanceof DurableObjectNamespace,
+      ),
+      bindings,
       bundle,
     };
   }
@@ -143,11 +158,12 @@ export class Worker extends Resource<WorkerProperties> {
       assets: "Fetcher",
       kv_namespace: "KVNamespace",
       durable_object_namespace: "DurableObjectNamespace",
-      hyperdrive: "HyperdriveConfig",
+      hyperdrive: "Hyperdrive",
       r2_bucket: "R2Bucket",
       plain_text: "string",
       secret_text: "string",
       json: "string",
+      version_metadata: "WorkerVersionMetadata",
 
       ai: "unknown",
       analytics_engine: "unknown",
@@ -160,7 +176,6 @@ export class Worker extends Resource<WorkerProperties> {
       service: "unknown",
       tail_consumer: "unknown",
       vectorize: "unknown",
-      version_metadata: "unknown",
       secrets_store_secret: "unknown",
       secret_key: "unknown",
     };
@@ -182,6 +197,21 @@ export class Worker extends Resource<WorkerProperties> {
       "",
     ];
     await Bun.write("env.d.ts", typeDefinition.join("\n"));
+  }
+
+  private async resolveBindings() {
+    return await Promise.all(
+      Object.entries(this.input.bindings ?? {}).map(
+        async ([name, binding]): Promise<WorkersBindingKind> => {
+          const value =
+            "getBinding" in binding ? await binding.getBinding() : binding;
+          return {
+            ...value,
+            name,
+          };
+        },
+      ),
+    );
   }
 
   private async resolveBundle() {

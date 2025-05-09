@@ -2,6 +2,8 @@
 
 interface CloudflareEnv {
   AUTH_KV: KVNamespace;
+  SECRET: string;
+  METADATA: WorkerVersionMetadata;
 }
 
 declare module "cloudflare:workers" {

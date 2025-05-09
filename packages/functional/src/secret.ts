@@ -7,8 +7,21 @@ export class Secret implements Bindable {
   getBinding(): WorkersBindingInput {
     return {
       type: "secret_text",
-      text: this.value,
+      text: this.proxy(),
     };
+  }
+
+  toString() {
+    return this.value;
+  }
+
+  toJSON() {
+    return this.value;
+  }
+
+  private proxy<T>(): T {
+    // biome-ignore lint/suspicious/noExplicitAny: this is a hack... figure out a better way
+    return this as any;
   }
 
   static fromEnv(name: string) {
