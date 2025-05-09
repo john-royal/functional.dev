@@ -76,7 +76,12 @@ export class Worker extends Resource<WorkerProperties> {
               sourcemap: "external",
               outdir: name,
               format: "esm",
+              target: "node",
+              conditions: ["workerd", "worker", "browser"],
               minify: { whitespace: true, syntax: true, identifiers: false },
+              define: {
+                "import.meta.url": "/",
+              },
             },
             metadata,
           );
