@@ -21,12 +21,16 @@ interface BundleOutput {
 export class Bundle extends Resource<BundleResourceProperties> {
   readonly kind = "bundle";
 
+  static override get provider() {
+    return new BundleProvider();
+  }
+
   constructor(
     name: string,
     input: WithRequired<Bun.BuildConfig, "outdir">,
     metadata?: Resource.Metadata,
   ) {
-    super(new BundleProvider(), name, input, metadata);
+    super(Bundle.provider, name, input, metadata);
   }
 }
 
