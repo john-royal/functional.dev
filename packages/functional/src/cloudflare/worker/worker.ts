@@ -1,4 +1,3 @@
-import { useResourceOutput } from "~/core/output";
 import { Resource } from "~/core/resource";
 import { Bundle } from "~/bundle";
 import { BundleFile } from "~/bundle/bundle-file";
@@ -15,6 +14,8 @@ import type {
 import { WorkerURL } from "./url";
 import { computeFileHash } from "~/lib/file";
 import { TraceInputPlugin } from "~/bundle/plugins";
+import { $run } from "~/core/lifecycle";
+import { $app } from "~/core/app";
 
 export interface WorkerInput {
   name: string;
@@ -46,7 +47,7 @@ export interface WorkerProperties extends Resource.Properties {
   };
   output: {
     providerId: string;
-    in: WorkerMetadataOutput;
+    in: WorkerMetadataOutput | null;
     out: {
       url?: string;
     };
@@ -61,7 +62,7 @@ export class Worker extends Resource<WorkerProperties> {
 
   bundle: Bundle | RawBundle;
   assets?: WorkerAssets;
-  url: WorkerURL;
+  url?: WorkerURL;
 
   constructor(name: string, input: WorkerInput, metadata?: Resource.Metadata) {
     const bundle =
@@ -94,16 +95,19 @@ export class Worker extends Resource<WorkerProperties> {
           metadata,
         )
       : undefined;
-    const url = new WorkerURL(
-      `${name}.url`,
-      {
-        scriptName: input.name,
-        enabled: input.url ?? false,
-      },
-      {
-        dependsOn: [name],
-      },
-    );
+    const url =
+      input.url && $app.phase !== "dev"
+        ? new WorkerURL(
+            `${name}.url`,
+            {
+              scriptName: input.name,
+              enabled: true,
+            },
+            {
+              dependsOn: [name],
+            },
+          )
+        : undefined;
 
     super(Worker.provider, name, input, {
       ...metadata,
@@ -124,7 +128,7 @@ export class Worker extends Resource<WorkerProperties> {
 
   async getDerivedInput() {
     const [assets, bindings, bundle] = await Promise.all([
-      useResourceOutput(this.assets),
+      $run.use(this.assets),
       this.resolveBindings(),
       this.resolveBundle(),
     ]);
@@ -214,7 +218,7 @@ export class Worker extends Resource<WorkerProperties> {
             };
           }
           if (resource instanceof KVNamespace) {
-            const output = await useResourceOutput(resource);
+            const output = await $run.use(resource);
             return {
               name,
               type: "kv_namespace",
@@ -245,10 +249,7 @@ export class Worker extends Resource<WorkerProperties> {
   }
 
   private async resolveBundle() {
-    if (this.bundle instanceof RawBundle) {
-      return useResourceOutput(this.bundle).then((bundle) => bundle.artifacts);
-    }
-    return useResourceOutput(this.bundle).then((bundle) => bundle.artifacts);
+    return $run.use(this.bundle).then((bundle) => bundle.artifacts);
   }
 }
 

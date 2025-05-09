@@ -218,7 +218,29 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
     return completionToken;
   }
 
-  async dev(input: Resource.Input<WorkerProperties>) {
+  dev(): Resource.DevCommand<WorkerProperties> {
+    let mf: Miniflare | undefined;
+    return {
+      run: async (_, input) => {
+        const options = this.buildMiniflareOptions(input);
+        if (mf) {
+          await mf.setOptions(options);
+        } else {
+          mf = new Miniflare(options);
+          await mf.ready;
+        }
+        return null;
+      },
+      stop: async () => {
+        if (mf) {
+          await mf.dispose();
+          mf = undefined;
+        }
+      },
+    };
+  }
+
+  private buildMiniflareOptions(input: Resource.Input<WorkerProperties>) {
     const entry = input.bundle.find((file) => file.kind === "entry-point");
     assert(entry, "No entry point found");
     const options: MiniflareOptions = {
@@ -231,34 +253,26 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
       logRequests: true,
       verbose: true,
       log: new Log(LogLevel.VERBOSE),
+      cache: true,
+      cachePersist: $app.path.scope(input.name, "mf", "cache"),
+      durableObjectsPersist: $app.path.scope(input.name, "mf", "do"),
+      kvPersist: $app.path.scope(input.name, "mf", "kv"),
+      r2Persist: $app.path.scope(input.name, "mf", "r2"),
     };
     for (const binding of input.bindings ?? []) {
       switch (binding.type) {
         case "kv_namespace": {
-          if (!options.kvNamespaces) {
-            options.kvNamespaces = [];
-            options.kvPersist = $app.path.scope(input.name, "mf", "kv");
-          }
+          options.kvNamespaces ??= [];
           (options.kvNamespaces as string[]).push(binding.name);
           break;
         }
         case "r2_bucket": {
-          if (!options.r2Buckets) {
-            options.r2Buckets = [];
-            options.r2Persist = $app.path.scope(input.name, "mf", "r2");
-          }
+          options.r2Buckets ??= [];
           (options.r2Buckets as string[]).push(binding.name);
           break;
         }
         case "durable_object_namespace": {
-          if (!options.durableObjects) {
-            options.durableObjects = {};
-            options.durableObjectsPersist = $app.path.scope(
-              input.name,
-              "mf",
-              "do",
-            );
-          }
+          options.durableObjects ??= {};
           options.durableObjects[binding.name] = {
             className: binding.class_name,
             scriptName: input.name,
@@ -282,8 +296,6 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
           break;
       }
     }
-    const mf = new Miniflare(options);
-    await mf.ready;
-    console.log(`[${input.name}] Dev server started at http://localhost:8787`);
+    return options;
   }
 }

@@ -1,3 +1,5 @@
+import type { MaybePromise } from "./types";
+
 export class Mutex {
   private _locked = false;
   private _waiters: Array<() => void> = [];
@@ -26,7 +28,7 @@ export class Mutex {
   /**
    * Runs the given callback exclusively, releasing the lock afterwards.
    */
-  async runExclusive<T>(callback: () => Promise<T>): Promise<T> {
+  async runExclusive<T>(callback: () => MaybePromise<T>): Promise<T> {
     const release = await this.acquire();
     try {
       return await callback();

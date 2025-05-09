@@ -1,3 +1,5 @@
+import type { FSWatcher } from "node:fs";
+import { watch } from "node:fs";
 import { rmdir } from "node:fs/promises";
 import { $app } from "~/core/app";
 import { Resource } from "~/core/resource";
@@ -19,16 +21,12 @@ interface BundleOutput {
 export class Bundle extends Resource<BundleResourceProperties> {
   readonly kind = "bundle";
 
-  static override get provider() {
-    return new BundleProvider();
-  }
-
   constructor(
     name: string,
     input: WithRequired<Bun.BuildConfig, "outdir">,
     metadata?: Resource.Metadata,
   ) {
-    super(Bundle.provider, name, input, metadata);
+    super(new BundleProvider(), name, input, metadata);
   }
 }
 
@@ -83,6 +81,33 @@ class BundleProvider implements Resource.Provider<BundleResourceProperties> {
     return {
       sources,
       artifacts,
+    };
+  };
+
+  dev = (): Resource.DevCommand<BundleResourceProperties> => {
+    const watchers = new Map<string, FSWatcher>();
+
+    return {
+      run: async (ctx, input) => {
+        const devPlugin: Bun.BunPlugin = {
+          name: "dev",
+          setup: (builder) => {
+            builder.onLoad({ filter: /\.(ts|js)$/ }, (args) => {
+              if (watchers.has(args.path)) return;
+              watchers.set(
+                args.path,
+                watch(args.path, () => {
+                  ctx.trigger();
+                }),
+              );
+            });
+          },
+        };
+        return await this.run({
+          ...input,
+          plugins: [...(input.plugins ?? []), devPlugin],
+        });
+      },
     };
   };
 }

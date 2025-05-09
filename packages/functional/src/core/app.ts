@@ -1,19 +1,21 @@
-import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
 import { CloudflareClient } from "~/cloudflare/internal/client";
 import { JSONStore } from "../lib/store";
-import { LifecycleHandler } from "./handle";
-import type { AnyResource } from "./resource";
-import type { Resource } from "./resource";
+import { run } from "./lifecycle";
+import type { AnyResource, Resource } from "./resource";
+
+export type Phase = "up" | "down" | "dev";
 
 export interface AppProperties {
   name: string;
   cwd: string;
+  phase: Phase;
 }
 
 export class App implements AppProperties {
   name: string;
   cwd: string;
+  phase: Phase;
   out: string;
   cache: JSONStore;
   state: JSONStore;
@@ -25,6 +27,7 @@ export class App implements AppProperties {
   constructor(properties: AppProperties) {
     this.name = properties.name;
     this.cwd = properties.cwd;
+    this.phase = properties.phase;
     this.out = path.join(this.cwd, ".functional");
     this.cache = new JSONStore(path.join(this.out, "cache.json"));
     this.state = new JSONStore(path.join(this.out, "state.json"));
@@ -50,15 +53,15 @@ export class App implements AppProperties {
     this.resources.set(resource.name, resource as unknown as AnyResource);
   }
 
-  handler() {
-    return new LifecycleHandler(this);
+  run() {
+    return run(this, this.phase);
   }
 
-  static storage = new AsyncLocalStorage<App>();
+  static singleton?: App;
 
   static async init(properties: AppProperties) {
     const app = new App(properties);
-    App.storage.enterWith(app);
+    App.singleton = app;
     await app.init();
     return app;
   }
@@ -66,13 +69,13 @@ export class App implements AppProperties {
 
 export const $app = new Proxy({} as App, {
   get: (_, prop: keyof App) => {
-    const app = App.storage.getStore();
+    const app = App.singleton;
     if (!app) {
       const error = new Error("$app must be called inside an App");
       Error.captureStackTrace(error);
       throw error;
     }
-    return app[prop];
+    return Reflect.get(app, prop);
   },
 });
 

@@ -31,6 +31,14 @@ export class JSONStore implements IStore {
     await this.save();
   }
 
+  async patch<T>(key: string, value: Partial<T>): Promise<void> {
+    this.state[key] = {
+      ...(this.state[key] as T),
+      ...value,
+    };
+    await this.save();
+  }
+
   async delete(key: string): Promise<void> {
     delete this.state[key];
     await this.save();

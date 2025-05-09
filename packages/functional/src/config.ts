@@ -1,4 +1,4 @@
-import { App } from "./core/app";
+import { App, type Phase } from "./core/app";
 import type { MaybePromise } from "./lib/types";
 
 interface Config {
@@ -6,19 +6,24 @@ interface Config {
   setup: () => MaybePromise<void>;
 }
 
+const validatePhase = (phase?: string): phase is Phase => {
+  if (!phase || !["up", "down", "dev"].includes(phase)) {
+    return false;
+  }
+  return true;
+};
+
 export async function defineConfig(config: Config) {
+  const phase = process.argv[2];
+  if (!validatePhase(phase)) {
+    console.log("Usage: bun run functional.config.ts [up|down|dev]");
+    return;
+  }
   const app = await App.init({
     name: config.name,
     cwd: process.cwd(),
+    phase,
   });
   await config.setup();
-  const proc = process.argv[2] as "up" | "down" | "dev";
-  if (["up", "down", "dev"].includes(proc)) {
-    if (proc === "dev") {
-      console.warn("Dev server is in alpha, proceed with caution");
-    }
-    await app.handler()[proc]();
-  } else {
-    console.log("Usage: bun run functional.config.ts [up|down|dev]");
-  }
+  await app.run();
 }

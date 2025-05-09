@@ -63,7 +63,7 @@ export namespace Resource {
     diff: (input: Input<T>, state: State<T>) => Promise<Diff>;
     update?: (input: Input<T>, state: State<T>) => Promise<Output<T>>;
     delete?: (state: State<T>) => Promise<void>;
-    dev?: (input: Input<T>) => Promise<unknown>;
+    dev?: () => DevCommand<T>;
   }
   type WithProviderID<
     T extends Properties,
@@ -99,5 +99,15 @@ export namespace Resource {
 
   export interface Metadata {
     dependsOn: string[];
+  }
+
+  export interface DevCommandContext {
+    trigger: () => void;
+    signal?: AbortSignal;
+  }
+
+  export interface DevCommand<T extends Properties> {
+    run(ctx: DevCommandContext, input: Input<T>): Promise<Output<T>>;
+    stop?: () => Promise<void>;
   }
 }
