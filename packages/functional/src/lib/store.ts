@@ -1,5 +1,4 @@
 import { Mutex } from "./mutex";
-import { parse, serialize } from "./superjson";
 
 export interface IStore {
   get<T>(key: string): Promise<T | undefined>;
@@ -14,7 +13,17 @@ export class JSONStore implements IStore {
 
   private readonly mutex = new Mutex();
 
-  constructor(path: string) {
+  constructor(
+    path: string,
+    readonly serde: {
+      serialize: (value: unknown) => unknown;
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      deserialize: (value: any) => unknown;
+    } = {
+      serialize: (value) => value,
+      deserialize: (value) => value,
+    },
+  ) {
     this.file = Bun.file(path);
   }
 
@@ -46,8 +55,8 @@ export class JSONStore implements IStore {
 
   async load() {
     if (await this.file.exists()) {
-      const text = await this.file.text();
-      this.state = parse(text) as Record<string, unknown>;
+      const json = await this.file.json();
+      this.state = this.serde.deserialize(json) as Record<string, unknown>;
     }
   }
 
@@ -61,7 +70,9 @@ export class JSONStore implements IStore {
         });
         return;
       }
-      await this.file.write(JSON.stringify(serialize(this.state), null, 2));
+      await this.file.write(
+        JSON.stringify(this.serde.serialize(this.state), null, 2),
+      );
     });
   }
 }

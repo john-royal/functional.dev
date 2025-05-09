@@ -6,7 +6,8 @@
   "exports": {
     "./config": "./src/config.ts",
     "./cloudflare": "./src/cloudflare/index.ts",
-    "./command": "./src/command.ts"
+    "./command": "./src/command.ts",
+    "./secret": "./src/secret.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"

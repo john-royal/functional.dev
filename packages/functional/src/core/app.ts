@@ -1,6 +1,15 @@
 import path from "node:path";
 import { CloudflareClient } from "~/cloudflare/internal/client";
+import {
+  decrypt,
+  deriveKey,
+  encrypt,
+  generatePassphraseMetadata,
+  type Encrypted,
+  type PassphraseMetadata,
+} from "~/lib/encryption";
 import { JSONStore } from "../lib/store";
+import { deserialize, serialize } from "../lib/superjson";
 import { run } from "./lifecycle";
 import type { AnyResource, Resource } from "./resource";
 
@@ -10,6 +19,7 @@ export interface AppProperties {
   name: string;
   cwd: string;
   phase: Phase;
+  passphrase?: string;
 }
 
 export class App implements AppProperties {
@@ -17,7 +27,9 @@ export class App implements AppProperties {
   cwd: string;
   phase: Phase;
   out: string;
-  cache: JSONStore;
+  passphrase?: string;
+  key?: Buffer;
+  auth: JSONStore;
   state: JSONStore;
   resources = new Map<string, AnyResource>();
   providers: {
@@ -28,16 +40,44 @@ export class App implements AppProperties {
     this.name = properties.name;
     this.cwd = properties.cwd;
     this.phase = properties.phase;
+    this.passphrase =
+      properties.passphrase ?? process.env.FUNCTIONAL_PASSPHRASE;
     this.out = path.join(this.cwd, ".functional");
-    this.cache = new JSONStore(path.join(this.out, "cache.json"));
-    this.state = new JSONStore(path.join(this.out, "state.json"));
+    this.auth = new JSONStore(path.join(this.out, "auth.json"));
+    this.state = new JSONStore(path.join(this.out, "state.json"), {
+      serialize,
+      deserialize,
+    });
     this.providers = {
-      cloudflare: new CloudflareClient({}, this.cache),
+      cloudflare: new CloudflareClient({}, this.auth),
     };
   }
 
+  encrypt(value: string): Encrypted {
+    if (!this.key) {
+      throw new Error("No key");
+    }
+    return encrypt(value, this.key);
+  }
+
+  decrypt(value: Encrypted): string {
+    if (!this.key) {
+      throw new Error("No key");
+    }
+    return decrypt(value, this.key);
+  }
+
   async init() {
-    await Promise.all([this.cache.load(), this.state.load()]);
+    await this.auth.load();
+    if (this.passphrase) {
+      let metadata = await this.auth.get<PassphraseMetadata>("key");
+      if (!metadata) {
+        metadata = generatePassphraseMetadata();
+        await this.auth.set("key", metadata);
+      }
+      this.key = deriveKey(this.passphrase, metadata);
+    }
+    await this.state.load();
     await this.providers.cloudflare.init();
   }
 

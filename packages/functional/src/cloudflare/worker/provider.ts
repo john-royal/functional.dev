@@ -3,12 +3,13 @@ import path from "node:path";
 import * as v from "valibot";
 import { $app, $cloudflare } from "~/core/app";
 import type { Resource } from "~/core/resource";
-import type { DurableObjectNamespace } from "../durable-object-namespace";
+import { DurableObjectNamespace } from "../durable-object-namespace";
 import type { WorkerAssetsManifest } from "./assets";
 import {
   type SingleStepMigration,
   type WorkerMetadataInput,
   WorkerMetadataOutput,
+  type WorkersBindingKind,
 } from "./types";
 import type { WorkerProperties } from "./worker";
 import { Log, LogLevel, Miniflare, type MiniflareOptions } from "miniflare";
@@ -52,14 +53,28 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
     assert(entry, "No entry point found");
     const metadata: WorkerMetadataInput = {
       main_module: entry.name,
-      bindings: input.bindings,
-      migrations: this.resolveMigrations(
-        input.durableObjectNamespaces ?? [],
-        state,
-      ),
+      migrations: this.resolveMigrations(input, state),
       compatibility_flags: ["nodejs_compat"],
       compatibility_date: "2025-05-01",
     };
+    if (input.bindings) {
+      metadata.bindings = await Promise.all(
+        Object.entries(input.bindings).map(
+          async ([name, binding]): Promise<WorkersBindingKind> => {
+            if ("getBinding" in binding) {
+              return {
+                name,
+                ...(await binding.getBinding()),
+              };
+            }
+            return {
+              name,
+              ...binding,
+            };
+          },
+        ),
+      );
+    }
     if (input.assets) {
       const jwt = await this.uploadAssets(
         input.name,
@@ -107,11 +122,16 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
   }
 
   private resolveMigrations(
-    durableObjectNamespaces: DurableObjectNamespace[],
+    input: Resource.Input<WorkerProperties>,
     state?: Resource.State<WorkerProperties>,
   ) {
     const migrations: SingleStepMigration = {};
-    const existingObjects = state?.input.durableObjectNamespaces ?? [];
+    const durableObjectNamespaces = Object.values(input.bindings ?? {}).filter(
+      (value) => value instanceof DurableObjectNamespace,
+    );
+    const existingObjects = Object.values(state?.input.bindings ?? {}).filter(
+      (value) => value instanceof DurableObjectNamespace,
+    );
     for (const binding of durableObjectNamespaces) {
       const existing = existingObjects.find(
         (existingBinding) => existingBinding.id === binding.id,
@@ -222,7 +242,7 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
     let mf: Miniflare | undefined;
     return {
       run: async (_, input) => {
-        const options = this.buildMiniflareOptions(input);
+        const options = await this.buildMiniflareOptions(input);
         if (mf) {
           await mf.setOptions(options);
         } else {
@@ -240,7 +260,7 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
     };
   }
 
-  private buildMiniflareOptions(input: Resource.Input<WorkerProperties>) {
+  private async buildMiniflareOptions(input: Resource.Input<WorkerProperties>) {
     const entry = input.bundle.find((file) => file.kind === "entry-point");
     assert(entry, "No entry point found");
     const options: MiniflareOptions = {
@@ -259,42 +279,52 @@ export class WorkerProvider implements Resource.Provider<WorkerProperties> {
       kvPersist: $app.path.scope(input.name, "mf", "kv"),
       r2Persist: $app.path.scope(input.name, "mf", "r2"),
     };
-    for (const binding of input.bindings ?? []) {
+    for (const [name, bindingOrConvertible] of Object.entries(
+      input.bindings ?? {},
+    )) {
+      const binding = await ("getBinding" in bindingOrConvertible
+        ? bindingOrConvertible.getBinding()
+        : bindingOrConvertible);
       switch (binding.type) {
         case "kv_namespace": {
           options.kvNamespaces ??= [];
-          (options.kvNamespaces as string[]).push(binding.name);
+          (options.kvNamespaces as string[]).push(name);
           break;
         }
         case "r2_bucket": {
           options.r2Buckets ??= [];
-          (options.r2Buckets as string[]).push(binding.name);
+          (options.r2Buckets as string[]).push(binding.bucket_name);
           break;
         }
         case "durable_object_namespace": {
           options.durableObjects ??= {};
-          options.durableObjects[binding.name] = {
+          options.durableObjects[name] = {
             className: binding.class_name,
             scriptName: input.name,
             useSQLite:
-              input.durableObjectNamespaces?.find(
-                (namespace) => namespace.className === binding.class_name,
-              )?.sqlite ?? false,
+              bindingOrConvertible instanceof DurableObjectNamespace
+                ? bindingOrConvertible.sqlite
+                : false,
             unsafeUniqueKey: binding.class_name,
           };
           break;
         }
-        case "assets":
-          options.assets = {
-            binding: binding.name,
-            directory: input.assets?.path ?? "",
-            routerConfig: {
-              has_user_worker: true,
-              invoke_user_worker_ahead_of_assets: true,
-            },
-          };
+        case "secret_text": {
+          options.bindings ??= {};
+          options.bindings[name] = binding.text;
           break;
+        }
       }
+    }
+    if (input.assets) {
+      options.assets = {
+        binding: "ASSETS",
+        directory: input.assets.path,
+        routerConfig: {
+          has_user_worker: true,
+          invoke_user_worker_ahead_of_assets: true,
+        },
+      };
     }
     return options;
   }

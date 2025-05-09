@@ -4,6 +4,9 @@ import {
   DurableObjectNamespace,
   type DurableObjectNamespaceProperties,
 } from "~/cloudflare/durable-object-namespace";
+import { $app } from "~/core/app";
+import { Secret } from "~/secret";
+import type { Encrypted } from "./encryption";
 
 superjson.registerCustom(
   {
@@ -23,6 +26,15 @@ superjson.registerCustom(
     deserialize: (value: BundleFileProperties) => new BundleFile(value),
   },
   "BundleFile",
+);
+
+superjson.registerCustom(
+  {
+    isApplicable: (value: unknown) => value instanceof Secret,
+    serialize: (value: Secret) => $app.encrypt(value.value),
+    deserialize: (value: Encrypted) => new Secret($app.decrypt(value)),
+  },
+  "Secret",
 );
 
 export * from "superjson";

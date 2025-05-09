@@ -1,3 +1,6 @@
+import type { Bindable } from "~/binding";
+import type { WorkersBindingInput } from "./worker/types";
+
 export interface DurableObjectNamespaceProperties {
   id: string;
   className: string;
@@ -8,7 +11,7 @@ export interface DurableObjectNamespaceProperties {
 }
 
 export class DurableObjectNamespace
-  implements DurableObjectNamespaceProperties
+  implements DurableObjectNamespaceProperties, Bindable
 {
   className: string;
   scriptName?: string;
@@ -25,6 +28,16 @@ export class DurableObjectNamespace
     this.environment = properties.environment;
     this.sqlite = properties.sqlite;
     this.namespaceId = properties.namespaceId;
+  }
+
+  getBinding(): WorkersBindingInput {
+    return {
+      type: "durable_object_namespace",
+      class_name: this.className,
+      environment: this.environment,
+      namespace_id: this.namespaceId,
+      script_name: this.scriptName,
+    };
   }
 
   static toJSON = (namespace: DurableObjectNamespace) => ({

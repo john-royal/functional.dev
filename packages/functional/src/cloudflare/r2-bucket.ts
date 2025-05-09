@@ -1,6 +1,8 @@
 import * as v from "valibot";
+import type { Bindable } from "~/binding";
 import { $cloudflare } from "~/core/app";
 import { Resource } from "~/core/resource";
+import type { WorkersBindingInput } from "./worker/types";
 
 const R2BucketStorageClass = v.enum({
   Standard: "Standard",
@@ -47,7 +49,7 @@ type R2BucketProperties = Resource.CRUDProperties<
   string
 >;
 
-export class R2Bucket extends Resource<R2BucketProperties> {
+export class R2Bucket extends Resource<R2BucketProperties> implements Bindable {
   readonly kind = "cloudflare:r2-bucket";
 
   constructor(
@@ -56,6 +58,13 @@ export class R2Bucket extends Resource<R2BucketProperties> {
     metadata?: Resource.Metadata,
   ) {
     super(R2Bucket.provider, name, input, metadata);
+  }
+
+  getBinding(): WorkersBindingInput {
+    return {
+      type: "r2_bucket",
+      bucket_name: this.name,
+    };
   }
 
   static readonly provider: Resource.Provider<R2BucketProperties> = {

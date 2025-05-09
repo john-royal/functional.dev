@@ -1,6 +1,9 @@
 import * as v from "valibot";
+import type { Bindable } from "~/binding";
 import { $cloudflare } from "~/core/app";
 import { Resource } from "~/core/resource";
+import type { WorkersBindingInput } from "./worker/types";
+import { $run } from "~/core/lifecycle";
 
 export const KVNamespaceInput = v.object({
   title: v.string(),
@@ -21,7 +24,10 @@ export type KVNamespaceProperties = Resource.CRUDProperties<
   string
 >;
 
-export class KVNamespace extends Resource<KVNamespaceProperties> {
+export class KVNamespace
+  extends Resource<KVNamespaceProperties>
+  implements Bindable
+{
   readonly kind = "cloudflare:kv-namespace";
 
   constructor(
@@ -30,6 +36,14 @@ export class KVNamespace extends Resource<KVNamespaceProperties> {
     metadata?: Resource.Metadata,
   ) {
     super(KVNamespace.provider, name, input, metadata);
+  }
+
+  async getBinding(): Promise<WorkersBindingInput> {
+    const output = await $run.use(this);
+    return {
+      type: "kv_namespace",
+      namespace_id: output.id,
+    };
   }
 
   static readonly provider: Resource.Provider<KVNamespaceProperties> = {

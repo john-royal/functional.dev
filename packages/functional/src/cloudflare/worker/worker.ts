@@ -1,9 +1,11 @@
-import { Resource } from "~/core/resource";
+import type { Bindable } from "~/binding";
 import { Bundle } from "~/bundle";
 import { BundleFile } from "~/bundle/bundle-file";
-import { DurableObjectNamespace } from "../durable-object-namespace";
-import { KVNamespace } from "../kv-namespace";
-import { R2Bucket } from "../r2-bucket";
+import { TraceInputPlugin } from "~/bundle/plugins";
+import { $app } from "~/core/app";
+import { $run } from "~/core/lifecycle";
+import { Resource } from "~/core/resource";
+import { computeFileHash } from "~/lib/file";
 import { type WorkerAssetsOutput, WorkerAssets } from "./assets";
 import { WorkerProvider } from "./provider";
 import type {
@@ -12,21 +14,13 @@ import type {
   WorkersBindingKind,
 } from "./types";
 import { WorkerURL } from "./url";
-import { computeFileHash } from "~/lib/file";
-import { TraceInputPlugin } from "~/bundle/plugins";
-import { $run } from "~/core/lifecycle";
-import { $app } from "~/core/app";
 
 export interface WorkerInput {
   name: string;
   handler: string;
   url?: boolean;
   assets?: string;
-  bindings?: Record<
-    string,
-    // biome-ignore lint/suspicious/noExplicitAny: required for binding types
-    Resource<any> | DurableObjectNamespace | WorkersBindingInput
-  >;
+  bindings?: Record<string, Bindable | WorkersBindingInput>;
   bundle?: boolean;
 }
 
@@ -40,8 +34,7 @@ export interface WorkerProperties extends Resource.Properties {
       assets?: WorkerAssetsOutput & {
         path: string;
       };
-      durableObjectNamespaces?: DurableObjectNamespace[];
-      bindings?: WorkersBindingKind[];
+      bindings?: Record<string, Bindable | WorkersBindingInput>;
       bundle: BundleFile[];
     };
   };
@@ -127,20 +120,10 @@ export class Worker extends Resource<WorkerProperties> {
   }
 
   async getDerivedInput() {
-    const [assets, bindings, bundle] = await Promise.all([
+    const [assets, bundle] = await Promise.all([
       $run.use(this.assets),
-      this.resolveBindings(),
       this.resolveBundle(),
     ]);
-
-    if (assets) {
-      bindings.push({
-        name: "ASSETS",
-        type: "assets",
-      });
-    }
-
-    void this.generateTypes(bindings);
 
     return {
       name: this.input.name,
@@ -150,10 +133,7 @@ export class Worker extends Resource<WorkerProperties> {
             path: this.input.assets as string,
           }
         : undefined,
-      durableObjectNamespaces: Object.values(this.input.bindings ?? {}).filter(
-        (binding) => binding instanceof DurableObjectNamespace,
-      ),
-      bindings,
+      bindings: this.input.bindings,
       bundle,
     };
   }
@@ -202,50 +182,6 @@ export class Worker extends Resource<WorkerProperties> {
       "",
     ];
     await Bun.write("env.d.ts", typeDefinition.join("\n"));
-  }
-
-  private async resolveBindings() {
-    return await Promise.all(
-      Object.entries(this.input.bindings ?? {}).map(
-        async ([name, resource]): Promise<WorkersBindingKind> => {
-          if (
-            !(resource instanceof Resource) &&
-            !(resource instanceof DurableObjectNamespace)
-          ) {
-            return {
-              name,
-              ...resource,
-            };
-          }
-          if (resource instanceof KVNamespace) {
-            const output = await $run.use(resource);
-            return {
-              name,
-              type: "kv_namespace",
-              namespace_id: output.id,
-            };
-          }
-          if (resource instanceof R2Bucket) {
-            return {
-              name,
-              type: "r2_bucket",
-              bucket_name: resource.input.name,
-            };
-          }
-          if (resource instanceof DurableObjectNamespace) {
-            return {
-              name,
-              type: "durable_object_namespace",
-              class_name: resource.className,
-              environment: resource.environment,
-              namespace_id: resource.namespaceId,
-              script_name: resource.scriptName,
-            };
-          }
-          throw new Error(`Unsupported binding type: ${resource}`);
-        },
-      ),
-    );
   }
 
   private async resolveBundle() {
